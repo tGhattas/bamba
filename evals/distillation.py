@@ -3,7 +3,7 @@ import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from mamba.models import MambaLMHeadModel, MambaConfig
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
 teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
