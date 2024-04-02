@@ -3,6 +3,7 @@ import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 from torch.utils.data import DataLoader
+from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
@@ -36,7 +37,7 @@ temperature = 2.0  # Temperature for softmax computation
 alpha = 0.5  # The weight of the distillation loss
 
 def init_dataloader():
-    dataset = load_dataset("EleutherAI/pile", streaming=True, limit=1000)
+    dataset = load_dataset("EleutherAI/pile", streaming=True)
 
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
@@ -54,7 +55,9 @@ def init_dataloader():
 
 def distill_knowledge(teacher_model, student_model, dataloader, optimizer):
     student_model.train()
-    for inputs, labels in dataloader:
+    limit = 1000
+    for inputs, labels in islice(dataloader, limit):
+
         optimizer.zero_grad()
         with torch.no_grad():
             teacher_outputs = teacher_model(**inputs).logits
