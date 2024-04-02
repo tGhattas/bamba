@@ -37,7 +37,7 @@ temperature = 2.0  # Temperature for softmax computation
 alpha = 0.5  # The weight of the distillation loss
 
 def init_dataloader():
-    dataset = load_dataset("EleutherAI/pile", streaming=True)
+    dataset = load_dataset("monology/pile-uncopyrighted", streaming=True)
 
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
