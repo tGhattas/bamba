@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from datasets import load_dataset
+from torch.utils.data import DataLoader
 from mamba.models import MambaLMHeadModel, MambaConfig
 
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
@@ -29,7 +31,26 @@ student_model = MambaLMHeadModel(config,
         )
 
 # Step 3: Knowledge Distillation
-criterion = nn.KLDivLoss()  # or another appropriate loss function
+
+temperature = 2.0  # Temperature for softmax computation
+alpha = 0.5  # The weight of the distillation loss
+
+def init_dataloader():
+    dataset = load_dataset("EleutherAI/pile", streaming=True, limit=1000)
+
+    # Load the teacher tokenizer
+    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
+
+    # Tokenize the dataset
+    def tokenize_function(examples):
+        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=512, return_tensors="pt")
+
+    tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
+
+    # Create the data loader
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=32, shuffle=True)
+    return data_loader
+
 
 def distill_knowledge(teacher_model, student_model, dataloader, optimizer):
     student_model.train()
@@ -39,14 +60,23 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer):
             teacher_outputs = teacher_model(**inputs).logits
         
         student_outputs = student_model(**inputs)
-        loss = criterion(student_outputs, teacher_outputs)
+
+        # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
+        distillation_loss = nn.kl_div(
+            torch.log_softmax(student_outputs / temperature, dim=-1),
+            torch.softmax(teacher_outputs / temperature, dim=-1),
+            reduction="batchmean",
+        ) * (temperature ** 2)
+
+        student_label_loss = nn.cross_entropy(student_outputs, labels)
+        loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
         loss.backward()
         optimizer.step()
 
 # Step 4: Training Loop
 def train():        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
-    dataloader = None  # Define your dataloader
+    dataloader = init_dataloader()
     distill_knowledge(teacher_model, student_model, dataloader, optimizer)
 
 # Step 5: Evaluate the student model
