@@ -53,11 +53,15 @@ def init_dataloader():
     return data_loader
 
 
-def distill_knowledge(teacher_model, student_model, dataloader, optimizer):
+def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit:int = 1000):
     student_model.train()
-    limit = 1000
-    for inputs, labels in islice(dataloader, limit):
 
+    for batch in islice(dataloader, limit):
+        # TODO: move to GPU later
+
+        batch = batch['input_ids']
+        inputs = batch[:, :-1].contiguous()
+        labels = batch[:, 1:].contiguous()
         optimizer.zero_grad()
         with torch.no_grad():
             teacher_outputs = teacher_model(**inputs).logits
@@ -80,6 +84,7 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer):
 def train():        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
     dataloader = init_dataloader()
+
     distill_knowledge(teacher_model, student_model, dataloader, optimizer)
 
 # Step 5: Evaluate the student model
