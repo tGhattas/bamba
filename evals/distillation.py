@@ -64,9 +64,9 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
         labels = batch[:, 1:].contiguous()
         optimizer.zero_grad()
         with torch.no_grad():
-            teacher_outputs = teacher_model(**inputs).logits
+            teacher_outputs = teacher_model(input_ids=inputs).logits
         
-        student_outputs = student_model(**inputs)
+        student_outputs = student_model(input_ids=inputs)
 
         # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
         distillation_loss = nn.kl_div(
