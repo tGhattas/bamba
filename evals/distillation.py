@@ -5,7 +5,7 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
-
+from tqdm import tqdm
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"\033[93m\033[1mDevice is: {device}\033[0m")
@@ -60,8 +60,9 @@ def init_dataloader():
 
 def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit:int = 1000):
     student_model.train()
+    first_batch = True
 
-    for batch in islice(dataloader, limit):
+    for batch in tqdm(islice(dataloader, limit)):
         batch = batch['input_ids'].to(device)
         inputs = batch[:, :-1].contiguous().to(device)
         labels = batch[:, 1:].contiguous().to(device)
@@ -72,9 +73,10 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
         
         student_outputs = student_model(input_ids=inputs)
 
-        # print  to make sure the shapes are correct
-        print(f"Student logits shape: {student_outputs.logits.shape}")
-        print(f"Teacher logits shape: {teacher_outputs.shape}")
+        if first_batch:
+            print(f"Student logits shape: {student_outputs.logits.shape}")
+            print(f"Teacher logits shape: {teacher_outputs.shape}")
+            first_batch = False
 
         # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
         distillation_loss = nn.KLDivLoss(reduction="batchmean")(
@@ -95,4 +97,14 @@ def train():
     distill_knowledge(teacher_model, student_model, dataloader, optimizer)
 
 # Step 5: Evaluate the student model
-# ...
+def evaluate():
+    #TODO: Implement this function
+    student_model.eval()
+    dataloader = init_dataloader()
+    for batch in tqdm(dataloader):
+        batch = batch['input_ids'].to(device)
+        inputs = batch[:, :-1].contiguous().to(device)
+        labels = batch[:, 1:].contiguous().to(device)
+        student_outputs = student_model(input_ids=inputs)
+        student_label_loss = nn.CrossEntropyLoss()(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
+        print(f"Student loss: {student_label_loss.item()}")
