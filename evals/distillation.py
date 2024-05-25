@@ -7,6 +7,7 @@ from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print("Device:", device)
 
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
 teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
