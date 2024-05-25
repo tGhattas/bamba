@@ -57,7 +57,7 @@ def init_dataloader():
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=8, num_workers=4, shuffle=True)
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=8, num_workers=4)
     return data_loader
 
 
