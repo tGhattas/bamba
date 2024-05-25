@@ -74,7 +74,7 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
 
         # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
         distillation_loss = nn.KLDivLoss(reduction="batchmean")(
-            torch.log_softmax(student_outputs / temperature, dim=-1),
+            torch.log_softmax(student_outputs.logits / temperature, dim=-1),
             torch.softmax(teacher_outputs / temperature, dim=-1),
         ) * (temperature ** 2)
 
