@@ -7,7 +7,8 @@ from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print("Device:", device)
+
+print(f"\033[93m\033[1mDevice is: {device}\033[0m")
 
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
 teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -30,9 +31,10 @@ param = next(teacher_model.parameters())
 teacher_dtype = param.dtype
 student_model = MambaLMHeadModel(config,
         initializer_cfg=None,
-        device="cuda" if torch.cuda.is_available() else "cpu",
+        device=device,
         dtype=teacher_dtype,
-        ).to(device)
+        )
+
 
 # Step 3: Knowledge Distillation
 
