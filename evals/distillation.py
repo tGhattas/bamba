@@ -19,7 +19,7 @@ teacher_model.eval()
 config_data = {
     "d_model": 2560,
     "n_layer": teacher_model.config.num_hidden_layers, # 22 in case of TinyLlama-1.1B
-    "vocab_size": 50277,
+    "vocab_size": teacher_model.config.vocab_size,
     "ssm_cfg": {},
     "rms_norm": True,
     "residual_in_fp32": True,
