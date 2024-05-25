@@ -61,7 +61,7 @@ def init_dataloader():
     return data_loader
 
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader, optimizer: torch.optim.Optimizer, limit=10):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader, optimizer: torch.optim.Optimizer, limit=1000):
     student_model.train()
     first_batch = True
     log_interval = 10
@@ -99,11 +99,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             # report to wandb
 
 # Step 4: Training Loop
-def train():        
+def train(limit: int = 1000):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
     dataloader = init_dataloader()
 
-    distill_knowledge(teacher_model, student_model, dataloader, optimizer)
+    distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit=limit)
     # save the student model
     student_model.save_pretrained("student_model")
 
