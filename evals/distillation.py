@@ -51,7 +51,7 @@ def init_dataloader():
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=32)
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=32, pin_memory=True, num_workers=4, shuffle=True)
     return data_loader
 
 
@@ -59,7 +59,6 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
     student_model.train()
 
     for batch in islice(dataloader, limit):
-        # TODO: move to GPU later
         batch = batch['input_ids'].to(device)
         inputs = batch[:, :-1].contiguous().to(device)
         labels = batch[:, 1:].contiguous().to(device)
