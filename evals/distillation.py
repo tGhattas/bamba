@@ -95,6 +95,8 @@ def train():
     dataloader = init_dataloader()
 
     distill_knowledge(teacher_model, student_model, dataloader, optimizer)
+    # save the student model
+    student_model.save_pretrained("student_model")
 
 # Step 5: Evaluate the student model
 def evaluate():
