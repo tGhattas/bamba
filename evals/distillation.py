@@ -10,7 +10,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
 teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
+teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path).to(device)
 teacher_model.eval()
 
 # Step 2: Define the student model (a smaller transformer model with a LM head)
@@ -31,7 +31,7 @@ student_model = MambaLMHeadModel(config,
         initializer_cfg=None,
         device="cuda" if torch.cuda.is_available() else "cpu",
         dtype=teacher_dtype,
-        )
+        ).to(device)
 
 # Step 3: Knowledge Distillation
 
@@ -65,15 +65,14 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
         
         optimizer.zero_grad()
         with torch.no_grad():
-            teacher_outputs = teacher_model(input_ids=inputs).logits
+            teacher_outputs = teacher_model(input_ids=inputs).logits.to(device)
         
         student_outputs = student_model(input_ids=inputs)
 
         # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
-        distillation_loss = nn.kl_div(
+        distillation_loss = nn.KLDivLoss(reduction="batchmean")(
             torch.log_softmax(student_outputs / temperature, dim=-1),
             torch.softmax(teacher_outputs / temperature, dim=-1),
-            reduction="batchmean",
         ) * (temperature ** 2)
 
         student_label_loss = nn.cross_entropy(student_outputs, labels)
