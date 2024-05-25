@@ -6,6 +6,9 @@ from torch.utils.data import DataLoader
 from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
+import wandb
+wandb.init(project="mamba distillation", entity="bamba")
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"\033[93m\033[1mDevice is: {device}\033[0m")
@@ -54,40 +57,46 @@ def init_dataloader():
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=8, num_workers=4)
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=8, num_workers=4, shuffle=True)
     return data_loader
 
 
-def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit:int = 1000):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader, optimizer: torch.optim.Optimizer, limit=10):
     student_model.train()
     first_batch = True
+    log_interval = 10
+    epochs = 1
+    for epoch in range(epochs):
+        for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
+            batch = batch['input_ids'].to(device)
+            inputs = batch[:, :-1].contiguous().to(device)
+            labels = batch[:, 1:].contiguous().to(device)
+            
+            optimizer.zero_grad()
+            with torch.no_grad():
+                teacher_outputs = teacher_model(input_ids=inputs).logits.to(device)
+            
+            student_outputs = student_model(input_ids=inputs)
 
-    for batch in tqdm(islice(dataloader, limit)):
-        batch = batch['input_ids'].to(device)
-        inputs = batch[:, :-1].contiguous().to(device)
-        labels = batch[:, 1:].contiguous().to(device)
-        
-        optimizer.zero_grad()
-        with torch.no_grad():
-            teacher_outputs = teacher_model(input_ids=inputs).logits.to(device)
-        
-        student_outputs = student_model(input_ids=inputs)
+            if first_batch:
+                print(f"Student logits shape: {student_outputs.logits.shape}")
+                print(f"Teacher logits shape: {teacher_outputs.shape}")
+                first_batch = False
 
-        if first_batch:
-            print(f"Student logits shape: {student_outputs.logits.shape}")
-            print(f"Teacher logits shape: {teacher_outputs.shape}")
-            first_batch = False
+            # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
+            distillation_loss = nn.KLDivLoss(reduction="batchmean")(
+                torch.log_softmax(student_outputs.logits / temperature, dim=-1),
+                torch.softmax(teacher_outputs / temperature, dim=-1),
+            ) * (temperature ** 2)
 
-        # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
-        distillation_loss = nn.KLDivLoss(reduction="batchmean")(
-            torch.log_softmax(student_outputs.logits / temperature, dim=-1),
-            torch.softmax(teacher_outputs / temperature, dim=-1),
-        ) * (temperature ** 2)
+            student_label_loss = nn.CrossEntropyLoss()(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
+            loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
+            loss.backward()
+            optimizer.step()
 
-        student_label_loss = nn.CrossEntropyLoss()(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
-        loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
-        loss.backward()
-        optimizer.step()
+            if batch_idx % log_interval == 0:
+                wandb.log({"epoch": epoch, "loss": loss.item()})
+            # report to wandb
 
 # Step 4: Training Loop
 def train():        
@@ -99,8 +108,8 @@ def train():
     student_model.save_pretrained("student_model")
 
 # Step 5: Evaluate the student model
-def evaluate():
-    #TODO: Implement this function
+def evaluate(student_model_path: str):
+    student_model = MambaLMHeadModel.from_pretrained(student_model_path).to(device)
     student_model.eval()
     dataloader = init_dataloader()
     for batch in tqdm(dataloader):
