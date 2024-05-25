@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader
 from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
 teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
@@ -58,10 +60,10 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
 
     for batch in islice(dataloader, limit):
         # TODO: move to GPU later
-
-        batch = batch['input_ids']
-        inputs = batch[:, :-1].contiguous()
-        labels = batch[:, 1:].contiguous()
+        batch = batch['input_ids'].to(device)
+        inputs = batch[:, :-1].contiguous().to(device)
+        labels = batch[:, 1:].contiguous().to(device)
+        
         optimizer.zero_grad()
         with torch.no_grad():
             teacher_outputs = teacher_model(input_ids=inputs).logits
