@@ -7,7 +7,7 @@ from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
 import wandb
-wandb.init(project="mamba distillation", entity="bamba")
+wandb.init()
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
