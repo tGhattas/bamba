@@ -82,7 +82,7 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
             torch.softmax(teacher_outputs / temperature, dim=-1),
         ) * (temperature ** 2)
 
-        student_label_loss = nn.cross_entropy(student_outputs, labels)
+        student_label_loss = nn.CrossEntropyLoss()(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
         loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
         loss.backward()
         optimizer.step()
