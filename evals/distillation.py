@@ -72,6 +72,10 @@ def distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit
         
         student_outputs = student_model(input_ids=inputs)
 
+        # print  to make sure the shapes are correct
+        print(f"Student logits shape: {student_outputs.logits.shape}")
+        print(f"Teacher logits shape: {teacher_outputs.shape}")
+
         # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
         distillation_loss = nn.KLDivLoss(reduction="batchmean")(
             torch.log_softmax(student_outputs.logits / temperature, dim=-1),
