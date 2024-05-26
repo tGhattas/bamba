@@ -19,10 +19,17 @@ teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path).to(device)
 teacher_model.eval()
 
-# Step 2: Define the student model (a smaller transformer model with a LM head)
+
+
+# Step 2: Define the student model (a smaller transformer/MAMBA model with a LM head)
+
+# for sanity check, here is a TinyLlama student model that is identical to teacher but without the pre-trained weights
+llama_student_model = AutoModelForCausalLM.from_config(teacher_model.config).to(device)
+
+# MAMBA student model
 config_data = {
     "d_model": 2560,
-    "n_layer": 2 * teacher_model.config.num_hidden_layers, # 22 in case of TinyLlama-1.1B
+    "n_layer": teacher_model.config.num_hidden_layers, # 22 in case of TinyLlama-1.1B
     "vocab_size": teacher_model.config.vocab_size,
     "ssm_cfg": {},
     "rms_norm": True,
@@ -33,12 +40,14 @@ config_data = {
 config = MambaConfig(**config_data)
 param = next(teacher_model.parameters())
 teacher_dtype = param.dtype
-student_model = MambaLMHeadModel(config,
+mamba_student_model = MambaLMHeadModel(config,
         initializer_cfg=None,
         device=device,
         dtype=teacher_dtype,
         )
 
+
+student_model = llama_student_model
 
 # Step 3: Knowledge Distillation
 
