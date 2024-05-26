@@ -1,3 +1,4 @@
+from typing import Union
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -52,16 +53,16 @@ def init_dataloader():
 
     # Tokenize the dataset
     def tokenize_function(examples):
-        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=512, return_tensors="pt")
+        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=256, return_tensors="pt")
 
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=8, num_workers=4)
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=4, num_workers=4)
     return data_loader
 
 
-def print_model_parameters(model):
+def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, MambaLMHeadModel]):
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model: {model_name}")
@@ -75,7 +76,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     log_interval = 10
     epochs = 1
     # print the number of parameters in both models
-
+    print_model_parameters(teacher_model_path, teacher_model)
+    print_model_parameters("MAMBA Student Model", student_model)
     for epoch in range(epochs):
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
             batch = batch['input_ids'].to(device)
