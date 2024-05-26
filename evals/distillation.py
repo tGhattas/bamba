@@ -21,7 +21,7 @@ teacher_model.eval()
 # Step 2: Define the student model (a smaller transformer model with a LM head)
 config_data = {
     "d_model": 2560,
-    "n_layer": teacher_model.config.num_hidden_layers, # 22 in case of TinyLlama-1.1B
+    "n_layer": 2 * teacher_model.config.num_hidden_layers, # 22 in case of TinyLlama-1.1B
     "vocab_size": teacher_model.config.vocab_size,
     "ssm_cfg": {},
     "rms_norm": True,
@@ -61,11 +61,21 @@ def init_dataloader():
     return data_loader
 
 
+def print_model_parameters(model):
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Model: {model_name}")
+    print(f"Total Parameters: {total_params}")
+    print(f"Trainable Parameters: {trainable_params}")
+
+
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader, optimizer: torch.optim.Optimizer, limit=1000):
     student_model.train()
     first_batch = True
     log_interval = 10
     epochs = 1
+    # print the number of parameters in both models
+
     for epoch in range(epochs):
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
             batch = batch['input_ids'].to(device)
