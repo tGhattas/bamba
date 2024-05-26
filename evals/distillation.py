@@ -54,9 +54,15 @@ student_model = llama_student_model
 temperature = 2.0  # Temperature for softmax computation
 alpha = 0.5  # The weight of the distillation loss
 
+
+HF_PADDING_IGNORE = -100
+
+
+
 def init_dataloader():
     dataset = load_dataset("monology/pile-uncopyrighted", streaming=True)
 
+    
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
 
@@ -68,7 +74,7 @@ def init_dataloader():
 
     # Create the data loader
     data_loader = DataLoader(tokenized_datasets["train"], batch_size=4, num_workers=4)
-    return data_loader
+    return data_loader, teacher_tokenizer.pad_token_id
 
 
 def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, MambaLMHeadModel]):
@@ -79,7 +85,7 @@ def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, M
     print(f"Trainable Parameters: {trainable_params}")
 
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader, optimizer: torch.optim.Optimizer, limit=1000):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader, optimizer: torch.optim.Optimizer, padding_ignore_token_id: int, limit=1000):
     student_model.train()
     first_batch = True
     log_interval = 10
@@ -110,7 +116,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 torch.softmax(teacher_outputs / temperature, dim=-1),
             ) * (temperature ** 2)
 
-            student_label_loss = nn.CrossEntropyLoss()(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
+            student_label_loss = nn.CrossEntropyLoss(ignore_index=padding_ignore_token_id)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
             loss.backward()
             optimizer.step()
@@ -122,9 +128,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 # Step 4: Training Loop
 def train(limit: int = 1000):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
-    dataloader = init_dataloader()
+    dataloader, padding_ignore_token_id = init_dataloader()
 
-    distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit=limit)
+    distill_knowledge(teacher_model, student_model, dataloader, optimizer, padding_ignore_token_id, limit=limit)
     # save the student model
     student_model.save_pretrained("student_model")
 
