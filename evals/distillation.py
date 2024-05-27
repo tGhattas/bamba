@@ -1,7 +1,7 @@
 from typing import Union
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -23,8 +23,10 @@ teacher_model.eval()
 
 # Step 2: Define the student model (a smaller transformer/MAMBA model with a LM head)
 
-# for sanity check, here is a TinyLlama student model that is identical to teacher but without the pre-trained weights
-llama_student_model = AutoModelForCausalLM.from_config(teacher_model.config).to(device)
+# for sanity check, here is a TinyLlama student model that is identical to teacher but without the pre-trained weights and half the hidden size
+sanity_student_config = AutoConfig.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layers // 2
+llama_student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
 
 # MAMBA student model
 config_data = {
@@ -59,7 +61,7 @@ HF_PADDING_IGNORE = -100
 
 
 
-def init_dataloader():
+def init_dataloader(batch_size: int = 4):
     dataset = load_dataset("monology/pile-uncopyrighted", streaming=True)
 
     
@@ -73,7 +75,7 @@ def init_dataloader():
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=4, num_workers=4)
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, num_workers=4)
     return data_loader, teacher_tokenizer.pad_token_id
 
 
@@ -85,7 +87,8 @@ def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, M
     print(f"Trainable Parameters: {trainable_params}")
 
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader, optimizer: torch.optim.Optimizer, padding_ignore_token_id: int, limit=1000):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader,
+                       optimizer: torch.optim.Optimizer, padding_ignore_token_id: int, batch_size: int, limit=1000):
     student_model.train()
     first_batch = True
     log_interval = 10
@@ -126,11 +129,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             # report to wandb
 
 # Step 4: Training Loop
-def train(limit: int = 1000):        
+def train(limit: int = 1000, batch_size: int = 4):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
     dataloader, padding_ignore_token_id = init_dataloader()
 
-    distill_knowledge(teacher_model, student_model, dataloader, optimizer, padding_ignore_token_id, limit=limit)
+    distill_knowledge(teacher_model, student_model, dataloader, optimizer, padding_ignore_token_id, batch_size, limit=limit)
     # save the student model
     student_model.save_pretrained("student_model")
 
