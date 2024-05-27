@@ -88,7 +88,7 @@ def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, M
 
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader,
-                       optimizer: torch.optim.Optimizer, padding_ignore_token_id: int, batch_size: int, limit=1000):
+                       optimizer: torch.optim.Optimizer, limit=1000):
     student_model.train()
     first_batch = True
     log_interval = 10
@@ -134,9 +134,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 # Step 4: Training Loop
 def train(limit: int = 1000, batch_size: int = 4):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
-    dataloader, padding_ignore_token_id = init_dataloader()
+    dataloader = init_dataloader(batch_size)
 
-    distill_knowledge(teacher_model, student_model, dataloader, optimizer, padding_ignore_token_id, batch_size, limit=limit)
+    distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit=limit)
     # save the student model
     student_model.save_pretrained("student_model")
 
