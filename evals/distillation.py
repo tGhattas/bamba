@@ -76,7 +76,7 @@ def init_dataloader(batch_size: int = 4):
 
     # Create the data loader
     data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, num_workers=4)
-    return data_loader, teacher_tokenizer.pad_token_id
+    return data_loader
 
 
 def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, MambaLMHeadModel]):
@@ -98,15 +98,18 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     print_model_parameters("MAMBA Student Model", student_model)
     for epoch in range(epochs):
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
-            batch = batch['input_ids'].to(device)
-            inputs = batch[:, :-1].contiguous().to(device)
-            labels = batch[:, 1:].contiguous().to(device)
+            batched_input_ids = batch['input_ids'].to(device)
+            batched_attention_mask = batch['attention_mask'].to(device)
+            inputs = batched_input_ids[:, :-1].contiguous().to(device)
+            labels = batched_input_ids[:, 1:].contiguous().to(device)
+            attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+
             
             optimizer.zero_grad()
             with torch.no_grad():
-                teacher_outputs = teacher_model(input_ids=inputs).logits.to(device)
+                teacher_outputs = teacher_model(input_ids=inputs, attention_mask=attention_mask).logits.to(device)
             
-            student_outputs = student_model(input_ids=inputs)
+            student_outputs = student_model(input_ids=inputs, attention_mask=attention_mask)
 
             if first_batch:
                 print(f"Student logits shape: {student_outputs.logits.shape}")
@@ -119,7 +122,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 torch.softmax(teacher_outputs / temperature, dim=-1),
             ) * (temperature ** 2)
 
-            student_label_loss = nn.CrossEntropyLoss(ignore_index=padding_ignore_token_id)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
+            student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
             loss.backward()
             optimizer.step()
