@@ -100,16 +100,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
             batched_input_ids = batch['input_ids'].to(device)
             
-            # map padding token id in batched_input_ids to -100
-            batched_input_ids[batched_input_ids == pad_token_id] = HF_PADDING_IGNORE
-            
-            batched_attention_mask = batch['attention_mask'].to(device)
             
             inputs = batched_input_ids[:, :-1].contiguous().to(device)
             labels = batched_input_ids[:, 1:].contiguous().to(device)
+            labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-            attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
-
+            # batched_attention_mask = batch['attention_mask'].to(device)
+            # attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
             
             optimizer.zero_grad()
             with torch.no_grad():
