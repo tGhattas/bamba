@@ -129,6 +129,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 torch.log_softmax(student_outputs.logits / temperature, dim=-1),
                 torch.softmax(teacher_outputs / temperature, dim=-1),
             ) * (temperature ** 2)
+            assert distillation_loss.shape == attention_mask.shape
             distillation_loss = distillation_loss * attention_mask.float()
             student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
