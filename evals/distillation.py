@@ -101,7 +101,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             batched_input_ids = batch['input_ids'].to(device)
             
             # map padding token id in batched_input_ids to -100
-            # batched_input_ids[batched_input_ids == pad_token_id] = HF_PADDING_IGNORE
+            batched_input_ids[batched_input_ids == pad_token_id] = HF_PADDING_IGNORE
             
             batched_attention_mask = batch['attention_mask'].to(device)
             
@@ -131,13 +131,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 torch.log_softmax(student_outputs.logits / temperature, dim=-1),
                 torch.softmax(teacher_outputs / temperature, dim=-1),
             ) * (temperature ** 2)
-            
-            # log distillation loss shape and attention mask shape
-            print(distillation_loss)
-            print(f"Distillation loss shape: {distillation_loss.shape}")
-            print(f"Attention mask shape: {attention_mask.shape}")
-            # assert distillation_loss.shape == attention_mask.shape
-            # distillation_loss = distillation_loss * attention_mask.float()
 
             student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
