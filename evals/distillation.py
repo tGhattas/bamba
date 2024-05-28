@@ -19,7 +19,6 @@ teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path).to(device)
 teacher_model.eval()
 
-#sd
 
 # Step 2: Define the student model (a smaller transformer/MAMBA model with a LM head)
 
@@ -111,11 +110,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             optimizer.zero_grad()
             with torch.no_grad():
                 teacher_outputs = teacher_model(input_ids=inputs,
-                                                #  attention_mask=attention_mask
+                                                 attention_mask=attention_mask
                                                 ).logits.to(device)
             
             student_outputs = student_model(input_ids=inputs,
-                                            # attention_mask=attention_mask
+                                            attention_mask=attention_mask
                                              ) # TODO pass the attention mask to mamba also
 
             if first_batch:
