@@ -104,8 +104,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             labels = batched_input_ids[:, 1:].contiguous().to(device)
             labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-            # batched_attention_mask = batch['attention_mask'].to(device)
-            # attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+            batched_attention_mask = batch['attention_mask'].to(device)
+            attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
             
             optimizer.zero_grad()
             with torch.no_grad():
