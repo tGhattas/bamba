@@ -131,6 +131,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
             loss.backward()
+
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=1.0)
+
             optimizer.step()
 
             if batch_idx % log_interval == 0:
