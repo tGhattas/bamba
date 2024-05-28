@@ -133,6 +133,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             ) * (temperature ** 2)
             
             # log distillation loss shape and attention mask shape
+            print(distillation_loss)
             print(f"Distillation loss shape: {distillation_loss.shape}")
             print(f"Attention mask shape: {attention_mask.shape}")
             # assert distillation_loss.shape == attention_mask.shape
