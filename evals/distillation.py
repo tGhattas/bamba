@@ -19,7 +19,7 @@ teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path).to(device)
 teacher_model.eval()
 
-
+#sd
 
 # Step 2: Define the student model (a smaller transformer/MAMBA model with a LM head)
 
