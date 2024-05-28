@@ -111,9 +111,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             
             optimizer.zero_grad()
             with torch.no_grad():
-                teacher_outputs = teacher_model(input_ids=inputs, attention_mask=attention_mask).logits.to(device)
+                teacher_outputs = teacher_model(input_ids=inputs,
+                                                #  attention_mask=attention_mask
+                                                ).logits.to(device)
             
-            student_outputs = student_model(input_ids=inputs, attention_mask=attention_mask) # TODO pass the attention mask to mamba also
+            student_outputs = student_model(input_ids=inputs,
+                                            # attention_mask=attention_mask
+                                             ) # TODO pass the attention mask to mamba also
 
             if first_batch:
                 print(f"Student logits shape: {student_outputs.logits.shape}")
