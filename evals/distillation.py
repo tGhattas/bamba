@@ -48,13 +48,13 @@ mamba_student_model = MambaLMHeadModel(config,
         dtype=teacher_dtype,
         )
 
-
+vocab_size = teacher_model.config.vocab_size
 student_model = llama_student_model
 
 # Step 3: Knowledge Distillation
 
 temperature = 2.0  # Temperature for softmax computation
-alpha = 0.5  # The weight of the distillation loss
+alpha = 0.2  # The weight of the distillation loss
 
 
 HF_PADDING_IGNORE = -100
@@ -70,13 +70,13 @@ def init_dataloader(batch_size: int = 4):
 
     # Tokenize the dataset
     def tokenize_function(examples):
-        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=256, return_tensors="pt")
+        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=512, return_tensors="pt")
 
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # Create the data loader
     data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, num_workers=4)
-    return data_loader
+    return data_loader, teacher_tokenizer.pad_token_id
 
 
 def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, MambaLMHeadModel]):
@@ -88,7 +88,7 @@ def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, M
 
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader,
-                       optimizer: torch.optim.Optimizer, limit=1000):
+                       optimizer: torch.optim.Optimizer, pad_token_id: int, limit: int=1000):
     student_model.train()
     first_batch = True
     log_interval = 10
@@ -99,9 +99,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     for epoch in range(epochs):
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
             batched_input_ids = batch['input_ids'].to(device)
+            # map padding token id in batched_input_ids to -100
+        
+            batched_input_ids[batched_input_ids == pad_token_id] = HF_PADDING_IGNORE
             batched_attention_mask = batch['attention_mask'].to(device)
             inputs = batched_input_ids[:, :-1].contiguous().to(device)
             labels = batched_input_ids[:, 1:].contiguous().to(device)
+
             attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
 
             
@@ -109,7 +113,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             with torch.no_grad():
                 teacher_outputs = teacher_model(input_ids=inputs, attention_mask=attention_mask).logits.to(device)
             
-            student_outputs = student_model(input_ids=inputs, attention_mask=attention_mask)
+            student_outputs = student_model(input_ids=inputs, attention_mask=attention_mask) # TODO pass the attention mask to mamba also
 
             if first_batch:
                 print(f"Student logits shape: {student_outputs.logits.shape}")
@@ -121,7 +125,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 torch.log_softmax(student_outputs.logits / temperature, dim=-1),
                 torch.softmax(teacher_outputs / temperature, dim=-1),
             ) * (temperature ** 2)
-
+            distillation_loss = distillation_loss * attention_mask.float()
             student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
             loss.backward()
@@ -134,10 +138,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 # Step 4: Training Loop
 def train(limit: int = 1000, batch_size: int = 4):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
-    dataloader = init_dataloader(batch_size)
+    dataloader, pad_token_id = init_dataloader(batch_size)
 
-    distill_knowledge(teacher_model, student_model, dataloader, optimizer, limit=limit)
-    # save the student model
+    distill_knowledge(teacher_model, student_model, dataloader, optimizer, pad_token_id, limit=limit)
+    # save the student model 
     student_model.save_pretrained("student_model")
 
 # Step 5: Evaluate the student model
