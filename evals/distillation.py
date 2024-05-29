@@ -108,7 +108,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             
             inputs = batched_input_ids[:, :-1].contiguous().to(device)
             labels = batched_input_ids[:, 1:].contiguous().to(device)
-            labels[labels == pad_token_id] = HF_PADDING_IGNORE
+            # labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
             batched_attention_mask = batch['attention_mask'].to(device)
             attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
