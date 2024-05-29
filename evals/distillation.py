@@ -11,7 +11,7 @@ from tqdm import tqdm
 # WANDB
 import wandb
 wandb.init()
-wandb_outputs_table = wandb.Table(columns=["input_text", "student_output_text", "teacher_output_text"])
+# wandb_outputs_table = wandb.Table(columns=["input_text", "student_output_text", "teacher_output_text"])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -158,9 +158,21 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 # decoded_labels = teacher_tokenizer.batch_decode(labels)
                 decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs))
                 decoded_teacher_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(teacher_outputs))
+                f = open("steps_output.txt", "a")
                 for i in range(len(decoded_inputs)):
-                    wandb_outputs_table.add_data(decoded_inputs[i], decoded_student_outputs[i], decoded_teacher_outputs[i])
-                wandb.log({"outputs": wandb_outputs_table})
+                    # wandb_outputs_table.add_data(decoded_inputs[i], decoded_student_outputs[i], decoded_teacher_outputs[i])
+                    # output above prints to new file
+                    
+                    f.write("-" * 50 + "\n")
+                    f.write(f"Input: {decoded_inputs[i][-100:]}\n")
+                    f.write(f"Student Output: {decoded_student_outputs[i][-100:]}\n")
+                    f.write(f"Teacher Output: {decoded_teacher_outputs[i][-100:]}\n")
+                    f.write("\n" * 4)
+
+                f.close()
+
+            
+                # wandb.log({"outputs": wandb_outputs_table})
 
                 wandb.log({"epoch": epoch, "loss": loss.item()})
                 wandb.log({"epoch": epoch, "distillation_loss": distillation_loss.item()})
