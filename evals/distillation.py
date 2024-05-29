@@ -150,17 +150,18 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             optimizer.step()
 
             if batch_idx % log_interval == 0:
-                # Decode and log the input, label, and model output
-                decoded_inputs = teacher_tokenizer.batch_decode(inputs)
-                decoded_labels = teacher_tokenizer.batch_decode(labels)
-                decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs.logits))
+                
+                if batch_idx > limit // 4:
+                    # Decode and log the input, label, and model output
+                    decoded_inputs = teacher_tokenizer.batch_decode(inputs)
+                    decoded_labels = teacher_tokenizer.batch_decode(labels)
+                    decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs.logits))
+                    for i in range(len(decoded_inputs)):
+                        wandb_outputs_table.add_data(decoded_inputs[i], decoded_labels[i], decoded_student_outputs[i])
+                    wandb.log({"outputs": wandb_outputs_table})
 
-                for i in range(len(decoded_inputs)):
-                    wandb_outputs_table.add_data(decoded_inputs[i], decoded_labels[i], decoded_student_outputs[i])
-                    
-                    
                 wandb.log({"epoch": epoch, "loss": loss.item()})
-                wandb.log({"outputs": wandb_outputs_table})
+                
             # report to wandb
 
 # Step 4: Training Loop
