@@ -69,7 +69,7 @@ def init_dataloader(batch_size: int = 4):
     # dataset_path = "monology/pile-uncopyrighted"
     # dataset = load_dataset(dataset_path, streaming=True)
     dataset_path = "wikitext-2-v1"
-    dataset = load_dataset("wikitext", dataset_path, streaming=True)
+    dataset = load_dataset("wikitext", dataset_path, streaming=True) #
 
     
     # Load the teacher tokenizer
@@ -97,8 +97,7 @@ def logits_to_tokens(logits):
     """Convert logits to token ids."""
     return torch.argmax(logits, dim=-1)
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, dataloader: DataLoader,
-                       optimizer: torch.optim.Optimizer, pad_token_id: int, limit: int=1000):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, limit: int=1000):
     # TODO remove
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
     first_batch = True
@@ -108,6 +107,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     print_model_parameters(teacher_model_path, teacher_model)
     print_model_parameters("MAMBA Student Model", student_model)
     for epoch in range(epochs):
+        dataloader, pad_token_id = init_dataloader(batch_size)
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
             batched_input_ids = batch['input_ids'].to(device)
             
@@ -171,10 +171,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 # Step 4: Training Loop
 def train(limit: int = 1000, batch_size: int = 4):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
-    dataloader, pad_token_id = init_dataloader(batch_size)
     teacher_model.eval()
     student_model.train()
-    distill_knowledge(teacher_model, student_model, dataloader, optimizer, pad_token_id, limit=limit)
+    distill_knowledge(teacher_model, student_model, optimizer, batch_size, limit=limit)
     # save the student model 
     student_model.save_pretrained("student_model")
 
