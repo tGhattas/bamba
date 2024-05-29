@@ -57,8 +57,8 @@ student_model = llama_student_model
 
 # Step 3: Knowledge Distillation
 
-temperature = 5.0  # Temperature for softmax computation
-alpha = 0.7  # The weight of the distillation loss
+temperature = 2.0  # Temperature for softmax computation
+alpha = 0.5  # The weight of the distillation loss
 
 
 HF_PADDING_IGNORE = -100
@@ -148,7 +148,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             loss.backward()
 
             # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
 
             optimizer.step()
 
@@ -182,7 +182,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 
 # Step 4: Training Loop
 def train(limit: int = 1000, batch_size: int = 4):        
-    optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(student_model.parameters(), lr=0.0001)
     teacher_model.eval()
     student_model.train()
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, limit=limit)
