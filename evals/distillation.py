@@ -11,7 +11,7 @@ from tqdm import tqdm
 # WANDB
 import wandb
 wandb.init()
-wandb_outputs_table = wandb.Table(columns=["input_text", "label_text", "student_output_text"])
+wandb_outputs_table = wandb.Table(columns=["input_text", "label_text", "student_output_text", "teacher_output_text"])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -66,7 +66,10 @@ HF_PADDING_IGNORE = -100
 
 
 def init_dataloader(batch_size: int = 4):
-    dataset = load_dataset("monology/pile-uncopyrighted", streaming=True)
+    # dataset_path = "monology/pile-uncopyrighted"
+    # dataset = load_dataset(dataset_path, streaming=True)
+    dataset_path = "wikitext-2-v1"
+    dataset = load_dataset("wikitext", dataset_path)
 
     
     # Load the teacher tokenizer
@@ -124,20 +127,20 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             
             student_outputs = student_model(input_ids=inputs,
                                             attention_mask=attention_mask
-                                             ) # TODO pass the attention mask to mamba also
+                                             ).logits.to(device) # TODO pass the attention mask to mamba also
 
             if first_batch:
-                print(f"Student logits shape: {student_outputs.logits.shape}")
+                print(f"Student logits shape: {student_outputs.shape}")
                 print(f"Teacher logits shape: {teacher_outputs.shape}")
                 first_batch = False
 
             # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
             distillation_loss = nn.KLDivLoss(reduction="batchmean")(
-                torch.log_softmax(student_outputs.logits / temperature, dim=-1),
+                torch.log_softmax(student_outputs / temperature, dim=-1),
                 torch.softmax(teacher_outputs / temperature, dim=-1),
             ) * (temperature ** 2)
 
-            student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
+            student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
 
             
 
@@ -150,15 +153,14 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             optimizer.step()
 
             if batch_idx % log_interval == 0:
-                
-                if batch_idx > limit // 4:
-                    # Decode and log the input, label, and model output
-                    decoded_inputs = teacher_tokenizer.batch_decode(inputs)
-                    decoded_labels = teacher_tokenizer.batch_decode(labels)
-                    decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs.logits))
-                    for i in range(len(decoded_inputs)):
-                        wandb_outputs_table.add_data(decoded_inputs[i], decoded_labels[i], decoded_student_outputs[i])
-                    wandb.log({"outputs": wandb_outputs_table})
+                # Decode and log the input, label, and model output
+                decoded_inputs = teacher_tokenizer.batch_decode(inputs)
+                decoded_labels = teacher_tokenizer.batch_decode(labels)
+                decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs))
+                decoded_teacher_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(teacher_outputs))
+                for i in range(len(decoded_inputs)):
+                    wandb_outputs_table.add_data(decoded_inputs[i], decoded_labels[i], decoded_student_outputs[i], decoded_teacher_outputs[i])
+                wandb.log({"outputs": wandb_outputs_table})
 
                 wandb.log({"epoch": epoch, "loss": loss.item()})
                 wandb.log({"epoch": epoch, "distillation_loss": distillation_loss.item()})
@@ -170,6 +172,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 def train(limit: int = 1000, batch_size: int = 4):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.001)
     dataloader, pad_token_id = init_dataloader(batch_size)
+    teacher_model.eval()
     student_model.train()
     distill_knowledge(teacher_model, student_model, dataloader, optimizer, pad_token_id, limit=limit)
     # save the student model 
