@@ -138,7 +138,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 
             
 
-            loss = alpha * distillation_loss + (1 - alpha) * student_label_loss()
+            loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
             loss.backward()
 
             # Gradient clipping
