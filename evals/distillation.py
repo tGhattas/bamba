@@ -77,7 +77,7 @@ def init_dataloader(batch_size: int = 4):
 
     # Tokenize the dataset
     def tokenize_function(examples):
-        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=256, return_tensors="pt")
+        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=128, return_tensors="pt")
 
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
@@ -164,9 +164,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                     # output above prints to new file
                     
                     f.write("-" * 50 + "\n")
-                    f.write(f"Input: {decoded_inputs[i][-100:]}\n")
-                    f.write(f"Student Output: {decoded_student_outputs[i][-100:]}\n")
-                    f.write(f"Teacher Output: {decoded_teacher_outputs[i][-100:]}\n")
+                    f.write(f"Input: {decoded_inputs[i]}\n")
+                    f.write(f"Student Output: {decoded_student_outputs[i]}\n")
+                    f.write(f"Teacher Output: {decoded_teacher_outputs[i]}\n")
                     f.write("\n" * 4)
 
                 f.close()
