@@ -161,6 +161,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                     wandb.log({"outputs": wandb_outputs_table})
 
                 wandb.log({"epoch": epoch, "loss": loss.item()})
+                wandb.log({"epoch": epoch, "distillation_loss": distillation_loss.item()})
+                wandb.log({"epoch": epoch, "cross_entropy_loss": student_label_loss.item()})
                 
             # report to wandb
 
