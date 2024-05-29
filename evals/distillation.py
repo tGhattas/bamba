@@ -57,7 +57,7 @@ student_model = llama_student_model
 
 # Step 3: Knowledge Distillation
 
-temperature = 2.0  # Temperature for softmax computation
+temperature = 5.0  # Temperature for softmax computation
 alpha = 0.7  # The weight of the distillation loss
 
 
