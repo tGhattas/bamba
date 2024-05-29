@@ -103,7 +103,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
     first_batch = True
     log_interval = 50
-    epochs = 1
+    epochs = 5
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
     print_model_parameters("MAMBA Student Model", student_model)
