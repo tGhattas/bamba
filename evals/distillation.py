@@ -156,12 +156,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs.logits))
 
                 for i in range(len(decoded_inputs)):
-                    print('#' * 50)
-                    print(f"Input: {decoded_inputs[i]}")
-                    print('-' * 30)
-                    print(f"Label: {decoded_labels[i]}")
-                    print('-' * 30)
-                    print(f"Student Output: {decoded_student_outputs[i]}")
                     wandb_outputs_table.add_data(decoded_inputs[i], decoded_labels[i], decoded_student_outputs[i])
                     
                     
