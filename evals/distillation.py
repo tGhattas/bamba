@@ -7,8 +7,11 @@ from torch.utils.data import DataLoader
 from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
+
+# WANDB
 import wandb
 wandb.init()
+wandb_outputs_table = wandb.Table(columns=["input_text", "label_text", "student_output_text"])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -159,14 +162,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                     print(f"Label: {decoded_labels[i]}")
                     print('-' * 30)
                     print(f"Student Output: {decoded_student_outputs[i]}")
-                    wandb.log({
-                        "input_text": decoded_inputs[i],
-                        "label_text": decoded_labels[i],
-                        "student_output_text": decoded_student_outputs[i]
-                    })
+                    wandb_outputs_table.add_data(decoded_inputs[i], decoded_labels[i], decoded_student_outputs[i])
+                    
                     
                 wandb.log({"epoch": epoch, "loss": loss.item()})
-                
+                wandb.log({"outputs": wandb_outputs_table})
             # report to wandb
 
 # Step 4: Training Loop
