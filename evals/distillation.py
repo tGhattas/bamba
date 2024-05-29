@@ -69,7 +69,7 @@ def init_dataloader(batch_size: int = 4):
     # dataset_path = "monology/pile-uncopyrighted"
     # dataset = load_dataset(dataset_path, streaming=True)
     dataset_path = "wikitext-2-v1"
-    dataset = load_dataset("wikitext", dataset_path)
+    dataset = load_dataset("wikitext", dataset_path, streaming=True)
 
     
     # Load the teacher tokenizer
