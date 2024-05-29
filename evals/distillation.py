@@ -55,7 +55,7 @@ student_model = llama_student_model
 # Step 3: Knowledge Distillation
 
 temperature = 2.0  # Temperature for softmax computation
-alpha = 0.2  # The weight of the distillation loss
+alpha = 0.7  # The weight of the distillation loss
 
 
 HF_PADDING_IGNORE = -100
@@ -96,7 +96,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     # TODO remove
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
     first_batch = True
-    log_interval = 10
+    log_interval = 50
     epochs = 1
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
@@ -159,13 +159,14 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                     print(f"Label: {decoded_labels[i]}")
                     print('-' * 30)
                     print(f"Student Output: {decoded_student_outputs[i]}")
+                    wandb.log({
+                        "input_text": decoded_inputs[i],
+                        "label_text": decoded_labels[i],
+                        "student_output_text": decoded_student_outputs[i]
+                    })
                     
                 wandb.log({"epoch": epoch, "loss": loss.item()})
-                wandb.log({
-                    "input_text": decoded_inputs,
-                    "label_text": decoded_labels,
-                    "student_output_text": decoded_student_outputs
-                })
+                
             # report to wandb
 
 # Step 4: Training Loop
