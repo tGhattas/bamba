@@ -11,7 +11,7 @@ from tqdm import tqdm
 # WANDB
 import wandb
 wandb.init()
-wandb_outputs_table = wandb.Table(columns=["input_text", "label_text", "student_output_text", "teacher_output_text"])
+wandb_outputs_table = wandb.Table(columns=["input_text", "student_output_text", "teacher_output_text"])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -114,7 +114,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             
             inputs = batched_input_ids[:, :-1].contiguous().to(device)
             labels = batched_input_ids[:, 1:].contiguous().to(device)
-            # labels[labels == pad_token_id] = HF_PADDING_IGNORE
+            labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
             batched_attention_mask = batch['attention_mask'].to(device)
             attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
@@ -155,11 +155,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             if batch_idx % log_interval == 0:
                 # Decode and log the input, label, and model output
                 decoded_inputs = teacher_tokenizer.batch_decode(inputs)
-                decoded_labels = teacher_tokenizer.batch_decode(labels)
+                # decoded_labels = teacher_tokenizer.batch_decode(labels)
                 decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs))
                 decoded_teacher_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(teacher_outputs))
                 for i in range(len(decoded_inputs)):
-                    wandb_outputs_table.add_data(decoded_inputs[i], decoded_labels[i], decoded_student_outputs[i], decoded_teacher_outputs[i])
+                    wandb_outputs_table.add_data(decoded_inputs[i], decoded_student_outputs[i], decoded_teacher_outputs[i])
                 wandb.log({"outputs": wandb_outputs_table})
 
                 wandb.log({"epoch": epoch, "loss": loss.item()})
