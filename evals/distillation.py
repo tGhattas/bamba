@@ -65,7 +65,7 @@ HF_PADDING_IGNORE = -100
 
 
 
-def init_dataloader(batch_size: int = 4):
+def init_dataloader(batch_size: int, max_length: int):
     # dataset_path = "monology/pile-uncopyrighted"
     # dataset = load_dataset(dataset_path, streaming=True)
     dataset_path = "wikitext-2-v1"
@@ -77,7 +77,7 @@ def init_dataloader(batch_size: int = 4):
 
     # Tokenize the dataset
     def tokenize_function(examples):
-        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=128, return_tensors="pt")
+        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
 
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
@@ -97,9 +97,10 @@ def logits_to_tokens(logits):
     """Convert logits to token ids."""
     return torch.argmax(logits, dim=-1)
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, limit: int=1000):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000):
     # TODO remove
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
+    
     first_batch = True
     log_interval = 50
     epochs = 5
@@ -107,7 +108,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     print_model_parameters(teacher_model_path, teacher_model)
     print_model_parameters("MAMBA Student Model", student_model)
     for epoch in range(epochs):
-        dataloader, pad_token_id = init_dataloader(batch_size)
+        dataloader, pad_token_id = init_dataloader(batch_size, max_length)
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
             batched_input_ids = batch['input_ids'].to(device)
             
@@ -162,7 +163,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 for i in range(len(decoded_inputs)):
                     # wandb_outputs_table.add_data(decoded_inputs[i], decoded_student_outputs[i], decoded_teacher_outputs[i])
                     # output above prints to new file
-                    
                     f.write("-" * 50 + "\n")
                     f.write(f"Input: {decoded_inputs[i]}\n")
                     f.write(f"Student Output: {decoded_student_outputs[i]}\n")
@@ -181,11 +181,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             # report to wandb
 
 # Step 4: Training Loop
-def train(limit: int = 1000, batch_size: int = 4):        
+def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.0001)
     teacher_model.eval()
     student_model.train()
-    distill_knowledge(teacher_model, student_model, optimizer, batch_size, limit=limit)
+    distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit)
     # save the student model 
     student_model.save_pretrained("student_model")
 
