@@ -18,7 +18,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"\033[93m\033[1mDevice is: {device}\033[0m")
 
 # Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
-teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+# teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+teacher_model_path = "mistralai/Mistral-7B-v0.3"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path).to(device)
 teacher_model.eval()
 
@@ -82,7 +83,7 @@ def init_dataloader(batch_size: int, max_length: int):
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, num_workers=4)
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, num_workers=2)
     return data_loader, teacher_tokenizer.pad_token_id
 
 
@@ -97,13 +98,12 @@ def logits_to_tokens(logits):
     """Convert logits to token ids."""
     return torch.argmax(logits, dim=-1)
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5):
     # TODO remove
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
-    
+
     first_batch = True
-    log_interval = 50
-    epochs = 5
+    log_interval = 100
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
     print_model_parameters("MAMBA Student Model", student_model)
@@ -181,11 +181,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             # report to wandb
 
 # Step 4: Training Loop
-def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128):        
+def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5):        
     optimizer = torch.optim.Adam(student_model.parameters(), lr=0.0001)
     teacher_model.eval()
     student_model.train()
-    distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit)
+    distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs)
     # save the student model 
     student_model.save_pretrained("student_model")
 
