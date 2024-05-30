@@ -17,9 +17,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"\033[93m\033[1mDevice is: {device}\033[0m")
 
-# Step 1: Load the teacher model (Mistral 7B as a LMHeadModel)
-# teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-teacher_model_path = "mistralai/Mistral-7B-v0.3"
+# Step 1: Load the teacher model (TinyLlama as a LMHeadModel)
+teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+# teacher_model_path = "mistralai/Mistral-7B-v0.3"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path).to(device)
 teacher_model.eval()
 
@@ -75,7 +75,7 @@ def init_dataloader(batch_size: int, max_length: int):
     
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
-    teacher_tokenizer.add_special_tokens({'pad_token': '[PAD]'}) 
+
     # Tokenize the dataset
     def tokenize_function(examples):
         return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
@@ -101,7 +101,6 @@ def logits_to_tokens(logits):
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5):
     
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True) # TODO remove
-    teacher_tokenizer.add_special_tokens({'pad_token': '[PAD]'}) # TODO remove
 
     first_batch = True
     log_interval = 100
