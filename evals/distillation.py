@@ -27,7 +27,7 @@ teacher_model.eval()
 # Step 2: Define the student model (a smaller transformer/MAMBA model with a LM head)
 
 # for sanity check, here is a TinyLlama student model that is identical to teacher but without the pre-trained weights and half the hidden size
-sanity_student_config = AutoConfig.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+sanity_student_config = AutoConfig.from_pretrained(teacher_model_path)
 sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layers // 2
 llama_student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
 
@@ -74,8 +74,8 @@ def init_dataloader(batch_size: int, max_length: int):
 
     
     # Load the teacher tokenizer
-    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
-
+    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+    teacher_tokenizer.add_special_tokens({'pad_token': '[PAD]'}) 
     # Tokenize the dataset
     def tokenize_function(examples):
         return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
@@ -99,8 +99,9 @@ def logits_to_tokens(logits):
     return torch.argmax(logits, dim=-1)
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5):
-    # TODO remove
-    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path)
+    
+    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True) # TODO remove
+    teacher_tokenizer.add_special_tokens({'pad_token': '[PAD]'}) # TODO remove
 
     first_batch = True
     log_interval = 100
