@@ -28,7 +28,7 @@ teacher_model.eval()
 
 # for sanity check, here is a TinyLlama student model that is identical to teacher but without the pre-trained weights and half the hidden size
 sanity_student_config = AutoConfig.from_pretrained(teacher_model_path)
-sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layers // 2
+sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layers // 4
 llama_student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
 
 # MAMBA student model
@@ -42,14 +42,14 @@ config_data = {
     "fused_add_norm": True,
     "pad_vocab_size_multiple": 8
 }
-config = MambaConfig(**config_data)
-param = next(teacher_model.parameters())
-teacher_dtype = param.dtype
-mamba_student_model = MambaLMHeadModel(config,
-        initializer_cfg=None,
-        device=device,
-        dtype=teacher_dtype,
-        )
+# config = MambaConfig(**config_data)
+# param = next(teacher_model.parameters())
+# teacher_dtype = param.dtype
+# mamba_student_model = MambaLMHeadModel(config,
+#         initializer_cfg=None,
+#         device=device,
+#         dtype=teacher_dtype,
+#         )
 
 vocab_size = teacher_model.config.vocab_size
 
