@@ -1,7 +1,7 @@
 from typing import Union
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -78,12 +78,21 @@ def init_dataloader(batch_size: int, max_length: int):
 
     # Tokenize the dataset
     def tokenize_function(examples):
-        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
+        return teacher_tokenizer(examples["text"], truncation=True,
+                                 padding=False,
+                                #   padding="max_length", max_length=max_length, return_tensors="pt"
+                                  )
 
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=teacher_tokenizer,
+        mlm=False,  # Set to True if using Masked Language Modeling
+        pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
+    )
+    
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, num_workers=2)
+    data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, collate_fn=data_collator)
     return data_loader, teacher_tokenizer.pad_token_id
 
 
@@ -120,7 +129,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             batched_attention_mask = batch['attention_mask'].to(device)
             attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
             
-            optimizer.zero_grad()
+            
             with torch.no_grad():
                 teacher_outputs = teacher_model(input_ids=inputs,
                                                  attention_mask=attention_mask
@@ -146,6 +155,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             
 
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
+            
+            optimizer.zero_grad()
             loss.backward()
 
             # Gradient clipping
