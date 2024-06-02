@@ -192,8 +192,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             # report to wandb
 
 # Step 4: Training Loop
-def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5):        
-    optimizer = torch.optim.Adam(student_model.parameters(), lr=0.0001)
+def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5, learning_rate: float = 5e-5):        
+    optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     teacher_model.eval()
     student_model.train()
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs)
