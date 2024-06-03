@@ -1,0 +1,7 @@
+causal-conv1d>=1.2.0
+datasets
+zstandard
+tqdm
+wandb
+huggingface_hub
+sentencepiece
