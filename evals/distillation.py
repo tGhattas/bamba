@@ -206,13 +206,13 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
 
-    optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     teacher_model.eval()
     if load_hf_model:
         student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
     else:
         student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
     student_model.train()
+    optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path)
     # save the student model 
