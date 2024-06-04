@@ -1,3 +1,4 @@
+import os
 from typing import Union
 import torch
 import torch.nn as nn
@@ -29,7 +30,7 @@ teacher_model.eval()
 # for sanity check, here is a TinyLlama student model that is identical to teacher but without the pre-trained weights and half the hidden size
 sanity_student_config = AutoConfig.from_pretrained(teacher_model_path)
 sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layers // 4
-llama_student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
+
 
 # MAMBA student model
 config_data = {
@@ -53,7 +54,6 @@ config_data = {
 
 vocab_size = teacher_model.config.vocab_size
 
-student_model = llama_student_model
 
 
 # Step 3: Knowledge Distillation
@@ -107,12 +107,14 @@ def logits_to_tokens(logits):
     """Convert logits to token ids."""
     return torch.argmax(logits, dim=-1)
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5):
-    
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5, save_interval: int=1000, load_chkpt: bool=False, model_path: str=None):
+    if load_chkpt:
+        student_model.load_state_dict(torch.load(model_path))
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True) # TODO remove
 
     first_batch = True
     log_interval = 100
+    
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
     print_model_parameters("MAMBA Student Model", student_model)
@@ -164,6 +166,15 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 
             optimizer.step()
 
+
+            if batch_idx % save_interval == 0:
+                # save checkpoint
+                # create checkpoint dir if it doesn't exist
+                if os.path.exists("./checkpoints") == False:
+                    os.mkdir("./checkpoints")
+                torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_{batch_idx}_loaded_from_{teacher_model_path}.pt")
+
+                
             if batch_idx % log_interval == 0:
                 # Decode and log the input, label, and model output
                 decoded_inputs = teacher_tokenizer.batch_decode(inputs)
@@ -192,13 +203,22 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             # report to wandb
 
 # Step 4: Training Loop
-def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5, learning_rate: float = 5e-5):        
+def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
+           learning_rate: float = 5e-5,save_interval: int=1000, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None):   
+    # assert that if either load_chkpt or load_hf_model is True but not both
+    assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
+
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     teacher_model.eval()
+    if load_hf_model:
+        student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+    else:
+        student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
     student_model.train()
-    distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs)
+    distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
+                       save_interval=save_interval, load_chkpt=load_chkpt, model_path=model_path)
     # save the student model 
-    student_model.save_pretrained("student_model")
+    student_model.save_pretrained(f"student_model_full_trained_epoch_{epochs}_lr_{learning_rate}_mxln_{max_length}")
 
 # Step 5: Evaluate the student model
 def evaluate(student_model_path: str):
