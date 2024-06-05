@@ -9,20 +9,18 @@ from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
 import numpy as np
+import argparse
 
 # WANDB
 import wandb
 wandb.init()
 # wandb_outputs_table = wandb.Table(columns=["input_text", "student_output_text", "teacher_output_text"])
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-print(f"\033[93m\033[1mDevice is: {device}\033[0m")
 
 # Step 1: Load the teacher model (TinyLlama as a LMHeadModel)
 teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
-teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path).to(device)
+teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
 teacher_model.eval()
 
 
@@ -34,7 +32,8 @@ sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layer
 
 
 # MAMBA student model
-def get_mamba_model(path: str = None):
+def get_mamba_model(path: str = None, gpu: int = 0):
+    device = f'cuda:{gpu}'
     if path:
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
@@ -58,7 +57,6 @@ def get_mamba_model(path: str = None):
     return mamba_student_model
 
 vocab_size = teacher_model.config.vocab_size
-
 
 
 # Step 3: Knowledge Distillation
@@ -111,7 +109,9 @@ def logits_to_tokens(logits):
     """Convert logits to token ids."""
     return torch.argmax(logits, dim=-1)
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
+                       batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = 0):
+    device = f'cuda:{gpu}'
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
 
@@ -121,7 +121,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
     print_model_parameters(f"{"MAMBA" if isinstance(student_model, MambaLMHeadModel) else "Transformer"} model", student_model)
-    
+
     running_loss = 0
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
@@ -198,10 +198,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
-           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False):   
+           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, gpu: int = 0):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
-
+    device = f'cuda:{gpu}'
+    teacher_model.to(device)
     teacher_model.eval()
     if load_hf_model:
         if not is_mamba:
@@ -223,17 +224,17 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 
 # Evaluate the student model
-def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], gpu: int = 0):
 
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
-        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(device)
+        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(f'cuda:{gpu}')
     else:
         student_model = model_or_path
     
     student_model.eval()
     dataloader, pad_token_id = init_dataloader(4, 128, "test")
-    
+    device = f'cuda:{gpu}'
     # evalua using the test dataset
     running_loss = 0
     log_interval = 100
@@ -266,3 +267,26 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
 
         
 
+# command line run for training with parsing arguments
+if __name__ == "__main__":
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--max_length", type=int, default=128)
+    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--learning_rate", type=float, default=5e-5)
+    parser.add_argument("--load_chkpt", action="store_true")
+    parser.add_argument("--load_hf_model", action="store_true")
+    parser.add_argument("--model_path", type=str, default=None)
+    parser.add_argument("--is_mamba", action="store_true", default=False)
+    
+    parser.add_argument("--gpu", type=int, default=0)
+    args = parser.parse_args()
+    train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
+          learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
+          model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu)
+    evaluate(f"student_model_full_trained_epoch_{args.epochs}_lr_{args.learning_rate}_mxln_{args.max_length}")
+
+    # example command line run:
+    # python distillation.py --limit 100000000 --batch_size 8 --max_length 256 --epochs 5 --learning_rate 1e-4 --is_mamba --gpu 0
