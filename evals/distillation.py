@@ -33,24 +33,28 @@ sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layer
 
 
 # MAMBA student model
-config_data = {
-    "d_model": 2560,
-    "n_layer": teacher_model.config.num_hidden_layers, # 22 in case of TinyLlama-1.1B
-    "vocab_size": teacher_model.config.vocab_size,
-    "ssm_cfg": {},
-    "rms_norm": True,
-    "residual_in_fp32": True,
-    "fused_add_norm": True,
-    "pad_vocab_size_multiple": 8
-}
-# config = MambaConfig(**config_data)
-# param = next(teacher_model.parameters())
-# teacher_dtype = param.dtype
-# mamba_student_model = MambaLMHeadModel(config,
-#         initializer_cfg=None,
-#         device=device,
-#         dtype=teacher_dtype,
-#         )
+def get_mamba_model(path: str = None):
+    if path:
+         return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
+    config_data = {
+        "d_model": 2560,
+        "n_layer": teacher_model.config.num_hidden_layers, # 22 in case of TinyLlama-1.1B
+        "vocab_size": teacher_model.config.vocab_size,
+        "ssm_cfg": {},
+        "rms_norm": True,
+        "residual_in_fp32": True,
+        "fused_add_norm": True,
+        "pad_vocab_size_multiple": 8
+    }
+    config = MambaConfig(**config_data)
+    param = next(teacher_model.parameters())
+    teacher_dtype = param.dtype
+    mamba_student_model = MambaLMHeadModel(config,
+            initializer_cfg=None,
+            device=device,
+            dtype=teacher_dtype,
+            )
+    return mamba_student_model
 
 vocab_size = teacher_model.config.vocab_size
 
@@ -109,19 +113,18 @@ def logits_to_tokens(logits):
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None):
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
-    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True) # TODO remove
 
     first_batch = True
-    log_interval = 100
+    log_interval = 200
     
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
     print_model_parameters("MAMBA Student Model", student_model)
     for epoch in range(epochs):
 
-        total_loss = 0
-        total_distillation_loss = 0
-        total_cross_entropy_loss = 0
+        running_loss = 0
+        running_distillation_loss = 0
+        running_cross_entropy_loss = 0
 
         dataloader, pad_token_id = init_dataloader(batch_size, max_length)
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
@@ -140,7 +143,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                                                 ).logits.to(device)
             
             student_outputs = student_model(input_ids=inputs,
-                                            attention_mask=attention_mask
+                                            # attention_mask=attention_mask
                                              ).logits.to(device) # TODO pass the attention mask to mamba also
 
             if first_batch:
@@ -157,9 +160,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
             
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
-            total_loss += loss.item()
-            total_distillation_loss += distillation_loss.item()
-            total_cross_entropy_loss += student_label_loss.item()
+            running_loss += loss.item()
+            running_distillation_loss += distillation_loss.item()
+            running_cross_entropy_loss += student_label_loss.item()
 
             optimizer.zero_grad()
             loss.backward()
@@ -170,27 +173,12 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
             optimizer.step()
 
             if batch_idx % log_interval == 0:
-                # Decode and log the input, label, and model output
-                decoded_inputs = teacher_tokenizer.batch_decode(inputs)
-                # decoded_labels = teacher_tokenizer.batch_decode(labels)
-                decoded_student_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(student_outputs))
-                decoded_teacher_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(teacher_outputs))
-                f = open("steps_output.txt", "a")
-                for i in range(len(decoded_inputs)):
-                    f.write("-" * 50 + "\n")
-                    f.write(f"Input: {decoded_inputs[i]}\n")
-                    f.write(f"Student Output: {decoded_student_outputs[i]}\n")
-                    f.write(f"Teacher Output: {decoded_teacher_outputs[i]}\n")
-                    f.write("\n" * 4)
-                f.close()
-            
-                wandb.log({"epoch": epoch, "loss": loss.item()})
-                wandb.log({"epoch": epoch, "distillation_loss": distillation_loss.item()})
-                wandb.log({"epoch": epoch, "cross_entropy_loss": student_label_loss.item()})
-
-                wandb.log({"epoch": epoch, "total_loss": total_loss / (batch_idx + 1)})
-                wandb.log({"epoch": epoch, "total_distillation_loss": total_distillation_loss / (batch_idx + 1)})
-                wandb.log({"epoch": epoch, "total_cross_entropy_loss": total_cross_entropy_loss / (batch_idx + 1)})
+                wandb.log({"epoch": epoch, "runningl_loss": running_loss / log_interval})
+                wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss / log_interval})
+                wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss / log_interval})
+                running_loss = 0
+                running_distillation_loss = 0
+                running_cross_entropy_loss = 0
                 
                 
                 
@@ -211,8 +199,11 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     teacher_model.eval()
     if load_hf_model:
         student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+        # student_model = get_mamba_model(path=model_path)
     else:
         student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
+        # student_model = get_mamba_model()
+
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
@@ -234,9 +225,9 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
     dataloader, pad_token_id = init_dataloader(4, 128, "test")
     
     # evalua using the test dataset
-    total_loss = 0
-    total_batches = 0
-    for batch in tqdm(dataloader):
+    running_loss = 0
+    log_interval = 100
+    for batch_idx, batch in tqdm(enumerate(dataloader)):
         batched_input_ids = batch['input_ids'].to(device)
         inputs = batched_input_ids[:, :-1].contiguous().to(device)
         labels = batched_input_ids[:, 1:].contiguous().to(device)
@@ -250,13 +241,14 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
                                         ).logits.to(device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
-        total_loss += student_label_loss.item()
-        total_batches += 1
-    
-        wandb.log({"test_loss": student_label_loss.item()})
-        # perplexity calculation
-        perplexity = torch.exp(student_label_loss)
-        wandb.log({"test_perplexity": perplexity.item()})
+        running_loss += student_label_loss.item()
+
+        if batch_idx % log_interval == 0:
+            
+            wandb.log({"test_loss": running_loss / log_interval})
+            running_loss = 0
+
+        
 
     wandb.log({"average_test_loss": total_loss / total_batches})
     wandb.log({"average_test_perplexity": torch.exp(total_loss / total_batches).item()})
