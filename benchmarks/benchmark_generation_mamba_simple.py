@@ -33,12 +33,14 @@ dtype = torch.float16
 
 print(f"Loading model {args.model_name}")
 is_mamba = args.model_name.startswith("state-spaces/mamba-")
+
 if is_mamba:
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
     model = MambaLMHeadModel.from_pretrained(args.model_name, device=device, dtype=dtype)
 else:
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForCausalLM.from_pretrained(args.model_name, device_map={"": device}, torch_dtype=dtype)
+
 model.eval()
 print(f"Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
@@ -50,6 +52,7 @@ else:
     tokens = tokenizer(args.prompt, return_tensors="pt")
     input_ids = tokens.input_ids.to(device=device)
     attn_mask = tokens.attention_mask.to(device=device)
+
 max_length = input_ids.shape[1] + args.genlen
 
 if is_mamba:

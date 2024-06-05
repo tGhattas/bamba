@@ -66,9 +66,8 @@ HF_PADDING_IGNORE = -100
 
 
 
-def init_dataloader(batch_size: int, max_length: int):
-    # dataset_path = "monology/pile-uncopyrighted"
-    # dataset = load_dataset(dataset_path, streaming=True)
+def init_dataloader(batch_size: int, max_length: int, partition: str = "train"):
+
     dataset_path = "wikitext-2-v1"
     dataset = load_dataset("wikitext", dataset_path, streaming=True) #
 
@@ -92,7 +91,7 @@ def init_dataloader(batch_size: int, max_length: int):
     )
     
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, collate_fn=data_collator)
+    data_loader = DataLoader(tokenized_datasets[partition], batch_size=batch_size, collate_fn=data_collator)
     return data_loader, teacher_tokenizer.pad_token_id
 
 
@@ -120,10 +119,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     print_model_parameters("MAMBA Student Model", student_model)
     for epoch in range(epochs):
 
+        total_loss = 0
+        total_distillation_loss = 0
+        total_cross_entropy_loss = 0
+
         dataloader, pad_token_id = init_dataloader(batch_size, max_length)
         for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
             batched_input_ids = batch['input_ids'].to(device)
-            
             
             inputs = batched_input_ids[:, :-1].contiguous().to(device)
             labels = batched_input_ids[:, 1:].contiguous().to(device)
@@ -131,7 +133,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 
             batched_attention_mask = batch['attention_mask'].to(device)
             attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
-            
             
             with torch.no_grad():
                 teacher_outputs = teacher_model(input_ids=inputs,
@@ -152,24 +153,22 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 torch.log_softmax(student_outputs / temperature, dim=-1),
                 torch.softmax(teacher_outputs / temperature, dim=-1),
             ) * (temperature ** 2)
-#ignore_index=HF_PADDING_IGNORE
-            student_label_loss = nn.CrossEntropyLoss()(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
 
+            student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
             
-
             loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
-            
+            total_loss += loss.item()
+            total_distillation_loss += distillation_loss.item()
+            total_cross_entropy_loss += student_label_loss.item()
+
             optimizer.zero_grad()
             loss.backward()
 
             # Gradient clipping
             torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
-
+            
             optimizer.step()
 
-        
-
-                
             if batch_idx % log_interval == 0:
                 # Decode and log the input, label, and model output
                 decoded_inputs = teacher_tokenizer.batch_decode(inputs)
@@ -178,29 +177,32 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 decoded_teacher_outputs = teacher_tokenizer.batch_decode(logits_to_tokens(teacher_outputs))
                 f = open("steps_output.txt", "a")
                 for i in range(len(decoded_inputs)):
-                    # wandb_outputs_table.add_data(decoded_inputs[i], decoded_student_outputs[i], decoded_teacher_outputs[i])
-                    # output above prints to new file
                     f.write("-" * 50 + "\n")
                     f.write(f"Input: {decoded_inputs[i]}\n")
                     f.write(f"Student Output: {decoded_student_outputs[i]}\n")
                     f.write(f"Teacher Output: {decoded_teacher_outputs[i]}\n")
                     f.write("\n" * 4)
-
                 f.close()
-
             
-                # wandb.log({"outputs": wandb_outputs_table})
-
                 wandb.log({"epoch": epoch, "loss": loss.item()})
                 wandb.log({"epoch": epoch, "distillation_loss": distillation_loss.item()})
                 wandb.log({"epoch": epoch, "cross_entropy_loss": student_label_loss.item()})
+
+                wandb.log({"epoch": epoch, "total_loss": total_loss / (batch_idx + 1)})
+                wandb.log({"epoch": epoch, "total_distillation_loss": total_distillation_loss / (batch_idx + 1)})
+                wandb.log({"epoch": epoch, "total_cross_entropy_loss": total_cross_entropy_loss / (batch_idx + 1)})
+                
+                
                 
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
         torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}.pt")
 
+        # evaluate the student model
+        evaluate(student_model)
 
-# Step 4: Training Loop
+
+# Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
            learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None):   
     # assert that if either load_chkpt or load_hf_model is True but not both
@@ -218,15 +220,43 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     # save the student model 
     student_model.save_pretrained(f"student_model_full_trained_epoch_{epochs}_lr_{learning_rate}_mxln_{max_length}")
 
-# Step 5: Evaluate the student model
-def evaluate(student_model_path: str):
-    student_model = MambaLMHeadModel.from_pretrained(student_model_path).to(device)
+
+# Evaluate the student model
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
+
+    # evaluate the student model using the test dataset
+    if isinstance(model_or_path, str):
+        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(device)
+    else:
+        student_model = model_or_path
+    
     student_model.eval()
-    dataloader = init_dataloader()
+    dataloader, pad_token_id = init_dataloader(4, 128, "test")
+    
+    # evalua using the test dataset
+    total_loss = 0
+    total_batches = 0
     for batch in tqdm(dataloader):
-        batch = batch['input_ids'].to(device)
-        inputs = batch[:, :-1].contiguous().to(device)
-        labels = batch[:, 1:].contiguous().to(device)
-        student_outputs = student_model(input_ids=inputs)
-        student_label_loss = nn.CrossEntropyLoss()(student_outputs.logits.view(-1, student_outputs.logits.size(-1)), labels.view(-1))
-        print(f"Student loss: {student_label_loss.item()}")
+        batched_input_ids = batch['input_ids'].to(device)
+        inputs = batched_input_ids[:, :-1].contiguous().to(device)
+        labels = batched_input_ids[:, 1:].contiguous().to(device)
+        labels[labels == pad_token_id] = HF_PADDING_IGNORE
+
+        batched_attention_mask = batch['attention_mask'].to(device)
+        attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+
+        student_outputs = student_model(input_ids=inputs,
+                                        attention_mask=attention_mask
+                                        ).logits.to(device)
+
+        student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
+        total_loss += student_label_loss.item()
+        total_batches += 1
+    
+        wandb.log({"test_loss": student_label_loss.item()})
+        # perplexity calculation
+        perplexity = torch.exp(student_label_loss)
+        wandb.log({"test_perplexity": perplexity.item()})
+
+    wandb.log({"average_test_loss": total_loss / total_batches})
+    wandb.log({"average_test_perplexity": torch.exp(total_loss / total_batches).item()})
