@@ -120,7 +120,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
-    print_model_parameters(f"{"MAMBA" if isinstance(student_model, MambaLMHeadModel) else "Transformer"} model", student_model)
+    print_model_parameters(f"{'MAMBA' if isinstance(student_model, MambaLMHeadModel) else 'Transformer'} model", student_model)
 
     running_loss = 0
     running_distillation_loss = 0
