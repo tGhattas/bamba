@@ -141,10 +141,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
                 teacher_outputs = teacher_model(input_ids=inputs,
                                                  attention_mask=attention_mask
                                                 ).logits.to(device)
-            
-            student_outputs = student_model(input_ids=inputs,
-                                            # attention_mask=attention_mask
-                                             ).logits.to(device) # TODO pass the attention mask to mamba also
+            if isinstance(student_model, MambaLMHeadModel):
+                student_outputs = student_model(input_ids=inputs,
+                                                ).logits.to(device)
+            else:
+                student_outputs = student_model(input_ids=inputs,
+                                                attention_mask=attention_mask
+                                                ).logits.to(device) 
 
             if first_batch:
                 print(f"Student logits shape: {student_outputs.shape}")
@@ -192,17 +195,21 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
-           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None):   
+           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
 
     teacher_model.eval()
     if load_hf_model:
-        student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
-        # student_model = get_mamba_model(path=model_path)
+        if not is_mamba:
+            student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+        else:
+            student_model = get_mamba_model(path=model_path)
     else:
-        student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
-        # student_model = get_mamba_model()
+        if not is_mamba:
+            student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
+        else:
+            student_model = get_mamba_model()
 
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
