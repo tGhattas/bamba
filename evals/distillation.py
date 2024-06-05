@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
+import numpy as np
 
 # WANDB
 import wandb
@@ -257,7 +258,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
         if batch_idx % log_interval == 0:
             
             wandb.log({"test_loss": running_loss / log_interval})
-            perplexity = torch.exp(running_loss / log_interval)
+            perplexity = np.exp(running_loss / log_interval)
             wandb.log({"test_perplexity": perplexity})
             running_loss = 0
 
