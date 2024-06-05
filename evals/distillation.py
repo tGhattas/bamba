@@ -111,7 +111,7 @@ def logits_to_tokens(logits):
     """Convert logits to token ids."""
     return torch.argmax(logits, dim=-1)
 
-def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaLMHeadModel, optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None):
+def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer, batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None):
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
 
@@ -120,7 +120,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: MambaL
     
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
-    print_model_parameters("MAMBA Student Model", student_model)
+    print_model_parameters(f"{"MAMBA" if isinstance(student_model, MambaLMHeadModel) else "Transformer"} model", student_model)
     for epoch in range(epochs):
 
         running_loss = 0
