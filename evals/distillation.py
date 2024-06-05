@@ -208,12 +208,12 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
         else:
-            student_model = get_mamba_model(path=model_path)
+            student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
         else:
-            student_model = get_mamba_model()
+            student_model = get_mamba_model(gpu=gpu)
 
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
