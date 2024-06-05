@@ -243,9 +243,13 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
         batched_attention_mask = batch['attention_mask'].to(device)
         attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
 
-        student_outputs = student_model(input_ids=inputs,
-                                        attention_mask=attention_mask
+        if isinstance(student_model, MambaLMHeadModel):
+            student_outputs = student_model(input_ids=inputs,
                                         ).logits.to(device)
+        else:
+            student_outputs = student_model(input_ids=inputs,
+                                            attention_mask=attention_mask
+                                            ).logits.to(device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
