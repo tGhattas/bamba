@@ -193,7 +193,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}.pt")
 
         # evaluate the student model
-        evaluate(student_model)
+        evaluate(student_model, gpu=gpu)
 
 
 # Training Loop
@@ -218,7 +218,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
-                       load_chkpt=load_chkpt, model_path=model_path)
+                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu)
     # save the student model 
     student_model.save_pretrained(f"student_model_full_trained_epoch_{epochs}_lr_{learning_rate}_mxln_{max_length}")
 
@@ -286,7 +286,6 @@ if __name__ == "__main__":
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
           model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu)
-    evaluate(f"student_model_full_trained_epoch_{args.epochs}_lr_{args.learning_rate}_mxln_{args.max_length}")
 
     # example command line run:
-    # python distillation.py --limit 100000000 --batch_size 8 --max_length 256 --epochs 5 --learning_rate 1e-4 --is_mamba --gpu 0
+    # python distillation.py --limit 10 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-4 --is_mamba --gpu 0
