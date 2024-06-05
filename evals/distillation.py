@@ -257,9 +257,9 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel]):
         if batch_idx % log_interval == 0:
             
             wandb.log({"test_loss": running_loss / log_interval})
+            perplexity = torch.exp(running_loss / log_interval)
+            wandb.log({"test_perplexity": perplexity})
             running_loss = 0
 
         
 
-    wandb.log({"average_test_loss": total_loss / total_batches})
-    wandb.log({"average_test_perplexity": torch.exp(total_loss / total_batches).item()})
