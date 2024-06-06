@@ -32,8 +32,8 @@ sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layer
 
 
 # MAMBA student model
-def get_mamba_model(path: str = None, gpu: int = 0):
-    device = f'cuda:{gpu}'
+def get_mamba_model(path: str = None, gpu: int = None):
+    device = f'cuda{f":{gpu}" if gpu else ""}'
     if path:
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
@@ -110,8 +110,8 @@ def logits_to_tokens(logits):
     return torch.argmax(logits, dim=-1)
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
-                       batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = 0):
-    device = f'cuda:{gpu}'
+                       batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None):
+    device = f'cuda{f":{gpu}" if gpu else ""}'
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
 
@@ -198,10 +198,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
-           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, gpu: int = 0):   
+           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, gpu: int = None):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
-    device = f'cuda:{gpu}'
+    device = f'cuda{f":{gpu}" if gpu else ""}'
     teacher_model.to(device)
     teacher_model.eval()
     if load_hf_model:
@@ -224,7 +224,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 
 # Evaluate the student model
-def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], gpu: int = 0):
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], gpu: int = None):
 
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
@@ -234,7 +234,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
     
     student_model.eval()
     dataloader, pad_token_id = init_dataloader(4, 128, "test")
-    device = f'cuda:{gpu}'
+    device = f'cuda{f":{gpu}" if gpu else ""}'
     # evalua using the test dataset
     running_loss = 0
     log_interval = 100
@@ -270,6 +270,9 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
 # command line run for training with parsing arguments
 if __name__ == "__main__":
     
+    # train(limit=1000000000, batch_size=8, max_length=256, epochs=5, learning_rate=1e-4, is_mamba=True, gpu=0)
+
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -281,11 +284,11 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--is_mamba", action="store_true", default=False)
     
-    parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--gpu", type=int, default=None)
     args = parser.parse_args()
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
           model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu)
 
     # example command line run:
-    # python distillation.py --limit 10 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-4 --is_mamba --gpu 0
+    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-4 --is_mamba --gpu 0
