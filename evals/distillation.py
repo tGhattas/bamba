@@ -81,13 +81,10 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train"):
 
     #add paddign token to the tokenizer
     teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
-    
+
     # Tokenize the dataset
     def tokenize_function(examples):
-        return teacher_tokenizer(examples["text"], truncation=True,
-                                 padding=False,
-                                #   padding="max_length", max_length=max_length, return_tensors="pt"
-                                  )
+        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
 
     tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
