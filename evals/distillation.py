@@ -79,6 +79,9 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train"):
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
 
+    #add paddign token to the tokenizer
+    teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
+    
     # Tokenize the dataset
     def tokenize_function(examples):
         return teacher_tokenizer(examples["text"], truncation=True,
