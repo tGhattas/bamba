@@ -219,7 +219,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
             student_model = get_sanity_student_model(teacher_model_path).to(device)
         else:
             student_model = get_mamba_model(gpu=gpu)
-    student_model = DataParallel(student_model)
+    
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
