@@ -22,20 +22,22 @@ wandb.init()
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 # teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
-teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
-teacher_model.eval()
+def get_teacher_model(path: str):
+    return AutoModelForCausalLM.from_pretrained(path)
 
 
-# Step 2: Define the student model (a smaller transformer/MAMBA model with a LM head)
+def get_sanity_student_model(path: str):
+    model = AutoModelForCausalLM.from_pretrained(path) 
+    model.num_hidden_layers = model.num_hidden_layers // 4
+    return model
 
-# for sanity check, here is a TinyLlama student model that is identical to teacher but without the pre-trained weights and half the hidden size
-sanity_student_config = AutoConfig.from_pretrained(teacher_model_path)
-sanity_student_config.num_hidden_layers = sanity_student_config.num_hidden_layers // 4
 
 
 # MAMBA student model
 def get_mamba_model(path: str = None, gpu: int = None):
     device = f'cuda{f":{gpu}" if gpu else ""}'
+    teacher_model = get_teacher_model(teacher_model_path)
+    
     if path:
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
@@ -58,13 +60,12 @@ def get_mamba_model(path: str = None, gpu: int = None):
             )
     return mamba_student_model
 
-vocab_size = teacher_model.config.vocab_size
 
 
 # Step 3: Knowledge Distillation
 
 temperature = 2.0  # Temperature for softmax computation
-alpha = 0.8  # The weight of the distillation loss
+alpha = 0.5  # The weight of the distillation loss
 
 
 HF_PADDING_IGNORE = -100
@@ -204,6 +205,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}'
+    teacher_model = get_teacher_model(teacher_model_path)
     teacher_model.to(device)
     teacher_model = DataParallel(teacher_model)
     teacher_model.eval()
@@ -214,7 +216,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
-            student_model = AutoModelForCausalLM.from_config(sanity_student_config).to(device)
+            student_model = get_sanity_student_model(teacher_model_path).to(device)
         else:
             student_model = get_mamba_model(gpu=gpu)
     student_model = DataParallel(student_model)
