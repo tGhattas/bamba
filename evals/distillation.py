@@ -18,7 +18,7 @@ wandb.init()
 
 
 
-teacher_model_path = "meta-llama/Meta-Llama-3-70B-Instruct"
+teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 # teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
