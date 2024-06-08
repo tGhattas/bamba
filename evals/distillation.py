@@ -17,8 +17,9 @@ wandb.init()
 # wandb_outputs_table = wandb.Table(columns=["input_text", "student_output_text", "teacher_output_text"])
 
 
-# Step 1: Load the teacher model (TinyLlama as a LMHeadModel)
-teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+
+teacher_model_path = "meta-llama/Meta-Llama-3-70B-Instruct"
+# teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 teacher_model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
 teacher_model.eval()
@@ -38,7 +39,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
         "d_model": 2560,
-        "n_layer": teacher_model.config.num_hidden_layers // 4, # 22 in case of TinyLlama-1.1B
+        "n_layer": teacher_model.config.num_hidden_layers // 5, # 22 in case of TinyLlama-1.1B
         "vocab_size": teacher_model.config.vocab_size,
         "ssm_cfg": {},
         "rms_norm": True,
@@ -116,7 +117,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         student_model.load_state_dict(torch.load(model_path))
 
     first_batch = True
-    log_interval = 200
+    log_interval = 1000
     
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
@@ -220,7 +221,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu)
     # save the student model 
-    student_model.save_pretrained(f"student_model_full_trained_epoch_{epochs}_lr_{learning_rate}_mxln_{max_length}")
+    student_model.save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}")
 
 
 # Evaluate the student model
@@ -233,12 +234,12 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
         student_model = model_or_path
     
     student_model.eval()
-    dataloader, pad_token_id = init_dataloader(4, 128, "test")
+    dataloader, pad_token_id = init_dataloader(4, 256, "test")
     device = f'cuda{f":{gpu}" if gpu else ""}'
     # evalua using the test dataset
     running_loss = 0
-    log_interval = 100
-    for batch_idx, batch in tqdm(enumerate(dataloader)):
+    
+    for batch in tqdm(dataloader):
         batched_input_ids = batch['input_ids'].to(device)
         inputs = batched_input_ids[:, :-1].contiguous().to(device)
         labels = batched_input_ids[:, 1:].contiguous().to(device)
@@ -258,12 +259,14 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
 
-        if batch_idx % log_interval == 0:
             
-            wandb.log({"test_loss": running_loss / log_interval})
-            perplexity = np.exp(running_loss / log_interval)
-            wandb.log({"test_perplexity": perplexity})
-            running_loss = 0
+    wandb.log({"test`_loss": running_loss / len(dataloader)})
+    perplexity = np.exp(running_loss / len(dataloader))
+    wandb.log({"test_perplexity": perplexity})
+    
+
+    
+    
 
         
 
