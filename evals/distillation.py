@@ -14,8 +14,7 @@ import argparse
 
 # WANDB
 import wandb
-wandb.init()
-# wandb_outputs_table = wandb.Table(columns=["input_text", "student_output_text", "teacher_output_text"])
+
 
 
 
@@ -279,7 +278,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
 if __name__ == "__main__":
     
     # train(limit=1000000000, batch_size=8, max_length=256, epochs=5, learning_rate=1e-4, is_mamba=True, gpu=0)
-
+    
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=1000)
@@ -294,6 +293,20 @@ if __name__ == "__main__":
     
     parser.add_argument("--gpu", type=int, default=None)
     args = parser.parse_args()
+
+    wandb.init(
+        project="MAMBA-KD",
+        config={
+                "limit": str(args.limit),
+                "batch_size": str(args.batch_size),
+                "max_length": str(args.max_length),
+                "epochs": str(args.epochs),
+                "learning_rate": str(args.learning_rate),
+                "model_path": str(args.model_path),
+                "is_mamba": str(args.is_mamba),
+        }
+       )
+
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
           model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu)
