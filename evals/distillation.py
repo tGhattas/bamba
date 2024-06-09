@@ -242,8 +242,9 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
     device = f'cuda{f":{gpu}" if gpu else ""}'
     # evalua using the test dataset
     running_loss = 0
-    
+    counter = 0
     for batch in tqdm(dataloader):
+        counter += 1
         batched_input_ids = batch['input_ids'].to(device)
         inputs = batched_input_ids[:, :-1].contiguous().to(device)
         labels = batched_input_ids[:, 1:].contiguous().to(device)
@@ -264,8 +265,8 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
         running_loss += student_label_loss.item()
 
             
-    wandb.log({"test`_loss": running_loss / len(dataloader)})
-    perplexity = np.exp(running_loss / len(dataloader))
+    wandb.log({"test_loss": running_loss / counter})
+    perplexity = np.exp(running_loss / counter)
     wandb.log({"test_perplexity": perplexity})
     
 
