@@ -25,9 +25,13 @@ def get_teacher_model(path: str):
     return AutoModelForCausalLM.from_pretrained(path)
 
 
-def get_sanity_student_model(path: str):
-    model = AutoModelForCausalLM.from_pretrained(path) 
-    model.num_hidden_layers = model.num_hidden_layers // 4
+def get_sanity_student_model(path: str=None):
+    if path:
+        model = AutoModelForCausalLM.from_pretrained(path)
+    else:
+        model = AutoModelForCausalLM.from_config(AutoConfig.from_pretrained(teacher_model_path))
+    # reduce the layers of llama model to fifth of the teacher model
+
     return model
 
 
@@ -187,15 +191,18 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 running_loss = 0
                 running_distillation_loss = 0
                 running_cross_entropy_loss = 0
-                
+
+            # evaluate the student model every 4 log intervals
+            if batch_idx % (log_interval * 4) == 0:
+                # evaluate the student model
+                evaluate(student_model, gpu=gpu)
                 
                 
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
         torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
 
-        # evaluate the student model
-        evaluate(student_model, gpu=gpu)
+        
 
 
 # Training Loop
@@ -232,7 +239,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
 
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
-        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(f'cuda:{gpu}')
+        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(f'cuda{f":{gpu}" if gpu else ""}')
     else:
         student_model = model_or_path
     
