@@ -222,11 +222,13 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     if load_hf_model:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+            student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
             student_model = get_sanity_student_model(teacher_model_path).to(device)
+            student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
     
