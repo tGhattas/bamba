@@ -29,9 +29,11 @@ def get_sanity_student_model(path: str=None):
     if path:
         model = AutoModelForCausalLM.from_pretrained(path)
     else:
-        model = AutoModelForCausalLM.from_config(AutoConfig.from_pretrained(teacher_model_path))
-    # reduce the layers of llama model to fifth of the teacher model
-
+        config = AutoConfig.from_pretrained(teacher_model_path)
+        config.num_hidden_layers = config.num_hidden_layers // 5
+        # log the number of hidden layers
+        print(f"get_sanity_student_model: Number of hidden layers in the student model: {config.num_hidden_layers}")
+        model = AutoModelForCausalLM.from_config(config)
     return model
 
 
@@ -61,6 +63,8 @@ def get_mamba_model(path: str = None, gpu: int = None):
             device=device,
             dtype=teacher_dtype,
             )
+    # log the number of hidden layers
+    print(f"get_mamba_model: Number of hidden layers in the student model: {config.n_layer}")
     return mamba_student_model
 
 
