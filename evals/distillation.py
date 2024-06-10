@@ -34,6 +34,10 @@ def get_sanity_student_model(path: str=None):
         # log the number of hidden layers
         print(f"get_sanity_student_model: Number of hidden layers in the student model: {config.num_hidden_layers}")
         model = AutoModelForCausalLM.from_config(config)
+    # print memory foorprint and number of parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    print("sanity_student_model: Total number of parameters: ", total_params)
+    print(f"sanity_student_model: Total memory footprint: {total_params * 4 / 1024 / 1024} MB")
     return model
 
 
