@@ -11,7 +11,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
 import numpy as np
 import argparse
-import time
+
 # WANDB
 import wandb
 
@@ -30,7 +30,7 @@ def get_sanity_student_model(path: str=None):
         model = AutoModelForCausalLM.from_pretrained(path)
     else:
         config = AutoConfig.from_pretrained(teacher_model_path)
-        config.num_hidden_layers = config.num_hidden_layers // 8
+        config.num_hidden_layers = config.num_hidden_layers // 9
         # log the number of hidden layers
         print(f"get_sanity_student_model: Number of hidden layers in the student model: {config.num_hidden_layers}")
         model = AutoModelForCausalLM.from_config(config)
