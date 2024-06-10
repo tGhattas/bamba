@@ -42,7 +42,8 @@ def get_sanity_student_model(path: str=None):
 def get_mamba_model(path: str = None, gpu: int = None):
     device = f'cuda{f":{gpu}" if gpu else ""}'
     teacher_model = get_teacher_model(teacher_model_path)
-    
+    param = next(teacher_model.parameters())
+    teacher_dtype = param.dtype
     if path:
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
@@ -56,8 +57,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
         "pad_vocab_size_multiple": 8
     }
     config = MambaConfig(**config_data)
-    param = next(teacher_model.parameters())
-    teacher_dtype = param.dtype
+    
     mamba_student_model = MambaLMHeadModel(config,
             initializer_cfg=None,
             device=device,
