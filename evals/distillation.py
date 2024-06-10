@@ -11,7 +11,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
 import numpy as np
 import argparse
-
+import time
 # WANDB
 import wandb
 
@@ -118,7 +118,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         student_model.load_state_dict(torch.load(model_path))
 
     first_batch = True
-    log_interval = 1000
+    log_interval = 200
     
     # print the number of parameters in both models
     print_model_parameters(teacher_model_path, teacher_model)
@@ -224,7 +224,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu)
     # save the student model 
-    student_model.save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}")
+    student_model.save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
 
 
 # Evaluate the student model
