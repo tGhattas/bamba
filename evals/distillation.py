@@ -30,7 +30,7 @@ def get_sanity_student_model(path: str=None):
         model = AutoModelForCausalLM.from_pretrained(path)
     else:
         config = AutoConfig.from_pretrained(teacher_model_path)
-        config.num_hidden_layers = config.num_hidden_layers // 6
+        config.num_hidden_layers = config.num_hidden_layers // 8
         # log the number of hidden layers
         print(f"get_sanity_student_model: Number of hidden layers in the student model: {config.num_hidden_layers}")
         model = AutoModelForCausalLM.from_config(config)
@@ -328,4 +328,4 @@ if __name__ == "__main__":
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --load_chkpt --model_path ./checkpoints/student_chkpt_epoch_0_type_mamba_max_length_256.pt --is_mamba --gpu 0
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B --is_mamba
-    # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path  --is_mamba
+    # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
