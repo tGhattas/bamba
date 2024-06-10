@@ -222,11 +222,13 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     if load_hf_model:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+            student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
             student_model = get_sanity_student_model(teacher_model_path).to(device)
+            student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
     
@@ -323,4 +325,6 @@ if __name__ == "__main__":
           model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu)
 
     # example command line run:
-    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-4 --is_mamba --gpu 0
+    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
+    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --load_chkpt --model_path ./checkpoints/student_chkpt_epoch_0_type_mamba_max_length_256.pt --is_mamba --gpu 0
+    # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B --is_mamba
