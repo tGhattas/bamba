@@ -69,6 +69,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
             )
     # log the number of hidden layers
     print(f"get_mamba_model: Number of hidden layers in the student model: {config.n_layer}")
+    print_model_parameters("MAMBA", mamba_student_model)
     return mamba_student_model
 
 
@@ -118,6 +119,7 @@ def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, M
     print(f"Model: {model_name}")
     print(f"Total Parameters: {total_params}")
     print(f"Trainable Parameters: {trainable_params}")
+    print(f"Total Memory Footprint: {total_params * 4 / 1024 / 1024} MB")
 
 def logits_to_tokens(logits):
     """Convert logits to token ids."""
@@ -132,10 +134,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     first_batch = True
     log_interval = 200
     
-    # print the number of parameters in both models
-    print_model_parameters(teacher_model_path, teacher_model)
-    print_model_parameters(f"{'MAMBA' if isinstance(student_model, MambaLMHeadModel) else 'Transformer'} model", student_model)
-
     running_loss = 0
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
@@ -223,6 +221,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     teacher_model.to(device)
     teacher_model = DataParallel(teacher_model)
     teacher_model.eval()
+    print_model_parameters(teacher_model_path, teacher_model)
     if load_hf_model:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
