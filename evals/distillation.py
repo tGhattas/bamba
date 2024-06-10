@@ -244,7 +244,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
         student_model = model_or_path
     
     student_model.eval()
-    dataloader, pad_token_id = init_dataloader(4, 256, "test")
+    dataloader, pad_token_id = init_dataloader(8, 128, "test")
     device = f'cuda{f":{gpu}" if gpu else ""}'
     # evalua using the test dataset
     running_loss = 0
