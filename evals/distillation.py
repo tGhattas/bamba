@@ -35,7 +35,7 @@ def get_sanity_student_model(path: str=None):
         config.eos_token_id = teacher_model_config.eos_token_id
         config.bos_token_id = teacher_model_config.bos_token_id
         config.vocab_size = teacher_model_config.vocab_size
-        config.num_hidden_layers = config.num_hidden_layers 
+        config.num_hidden_layers = int(0.7*config.num_hidden_layers)
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
     # adapt TinyLlama-1.1B to the teacher model
@@ -55,7 +55,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
         "d_model": 2560,
-        "n_layer": teacher_model.config.num_hidden_layers // 3, # 22 in case of TinyLlama-1.1B
+        "n_layer": teacher_model.config.num_hidden_layers // 4, # 22 in case of TinyLlama-1.1B
         "vocab_size": teacher_model.config.vocab_size,
         "ssm_cfg": {},
         "rms_norm": True,
