@@ -35,7 +35,7 @@ def get_sanity_student_model(path: str=None):
         config.eos_token_id = teacher_model_config.eos_token_id
         config.bos_token_id = teacher_model_config.bos_token_id
         config.vocab_size = teacher_model_config.vocab_size
-        config.num_hidden_layers = int(0.7*config.num_hidden_layers)
+        config.num_hidden_layers = int(0.2*config.num_hidden_layers)
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
     # adapt TinyLlama-1.1B to the teacher model
