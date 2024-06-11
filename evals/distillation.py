@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 from torch.nn import DataParallel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, LlamaForCausalLM
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -19,7 +19,7 @@ import wandb
 
 
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
-# teacher_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 def get_teacher_model(path: str):
     return AutoModelForCausalLM.from_pretrained(path)
@@ -29,15 +29,11 @@ def get_sanity_student_model(path: str=None):
     if path:
         model = AutoModelForCausalLM.from_pretrained(path)
     else:
-        config = AutoConfig.from_pretrained(teacher_model_path)
-        config.num_hidden_layers = config.num_hidden_layers // 9
-        # log the number of hidden layers
-        print(f"get_sanity_student_model: Number of hidden layers in the student model: {config.num_hidden_layers}")
+        # reduce the number of parameters in the student model
+        config = AutoConfig.from_pretrained(path)
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    print("sanity_student_model: Total number of parameters: ", total_params)
-    print(f"sanity_student_model: Total memory footprint: {total_params * 4 / 1024 / 1024} MB")
+    print_model_parameters("Sanity Student", model)
     return model
 
 
@@ -230,7 +226,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
-            student_model = get_sanity_student_model(teacher_model_path).to(device)
+            student_model = get_sanity_student_model(sanity_model_path).to(device)
             student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
