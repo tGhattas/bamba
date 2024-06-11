@@ -225,19 +225,19 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     device = f'cuda{f":{gpu}" if gpu else ""}'
     teacher_model = get_teacher_model(teacher_model_path)
     teacher_model#.to(device)
-    teacher_model = DataParallel(teacher_model)
+    # teacher_model = DataParallel(teacher_model)
     teacher_model.eval()
     print_model_parameters(teacher_model_path, teacher_model)
     if load_hf_model:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path)#.to(device)
-            student_model = DataParallel(student_model)
+            # student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
             student_model = get_sanity_student_model()#.to(device)
-            student_model = DataParallel(student_model)
+            # student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
     
@@ -255,7 +255,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
 
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
-        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(f'cuda{f":{gpu}" if gpu else ""}')
+        student_model = AutoModelForCausalLM.from_pretrained(model_or_path)#.to(f'cuda{f":{gpu}" if gpu else ""}')
     else:
         student_model = model_or_path
     
