@@ -146,7 +146,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(train_dataloader))
 
-    train_dataloader, eval_dataloader, model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, model, optimizer)
+    train_dataloader, eval_dataloader, teacher_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, teacher_model, student_model, optimizer)
 
     for epoch in range(epochs):
         for batch_idx, batch in tqdm(enumerate(islice(train_dataloader, limit))):
