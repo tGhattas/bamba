@@ -6,7 +6,7 @@ config = {
     "compute_environment": "LOCAL_MACHINE",
     "distributed_type": "MULTI_GPU",
     "num_machines": 1,
-    "num_processes": 2,  # Set this to the number of GPUs you want to use
+    "num_processes": 3,  # Set this to the number of GPUs you want to use
     "machine_rank": 0,
     "main_process_ip": None,
     "main_process_port": None,
