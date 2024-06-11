@@ -26,3 +26,5 @@ os.makedirs(config_dir, exist_ok=True)
 config_path = os.path.join(config_dir, "default_config.yaml")
 with open(config_path, "w") as f:
     yaml.dump(config, f, default_flow_style=False)
+
+print(f"Accelerate configuration file created at {config_path}")
