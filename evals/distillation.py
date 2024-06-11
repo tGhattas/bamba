@@ -224,7 +224,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}'
     teacher_model = get_teacher_model(teacher_model_path)
-    teacher_model#.to(device)
+    # teacher_model.to(device)
     # teacher_model = DataParallel(teacher_model)
     teacher_model.eval()
     print_model_parameters(teacher_model_path, teacher_model)
