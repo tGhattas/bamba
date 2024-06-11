@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 from torch.nn import DataParallel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, LlamaForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -11,7 +11,6 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
 import numpy as np
 import argparse
-
 # WANDB
 import wandb
 
@@ -30,9 +29,15 @@ def get_sanity_student_model(path: str=None):
         model = AutoModelForCausalLM.from_pretrained(path)
     else:
         # reduce the number of parameters in the student model
-        config = AutoConfig.from_pretrained(path)
+        config = AutoConfig.from_pretrained(sanity_model_path)
+        teacher_model_config = AutoConfig.from_pretrained(teacher_model_path)
+        config.eos_token_id = teacher_model_config.eos_token_id
+        config.bos_token_id = teacher_model_config.bos_token_id
+        config.vocab_size = teacher_model_config.vocab_size
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
+    # adapt TinyLlama-1.1B to the teacher model
+
     print_model_parameters("Sanity Student", model)
     return model
 
@@ -226,7 +231,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
-            student_model = get_sanity_student_model(sanity_model_path).to(device)
+            student_model = get_sanity_student_model().to(device)
             student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
