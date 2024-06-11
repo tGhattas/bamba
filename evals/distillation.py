@@ -130,7 +130,7 @@ def logits_to_tokens(logits):
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
-                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None):
+                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1):
     device = f'cuda{f":{gpu}" if gpu else ""}'
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
@@ -188,15 +188,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             running_loss += loss.item()
             running_distillation_loss += distillation_loss.item()
             running_cross_entropy_loss += student_label_loss.item()
-
-            optimizer.zero_grad()
-            # loss.backward() 
-            accelerator.backward(loss)
-            lr_scheduler.step()
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
-            
-            optimizer.step()
+            if (batch_idx + 1) % accumulation_steps == 0:
+                optimizer.zero_grad()
+                accelerator.backward(loss)
+                lr_scheduler.step()
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
+                optimizer.step()
 
             if batch_idx % log_interval == 0:
                 wandb.log({"epoch": epoch, "runningl_loss": running_loss / log_interval})
@@ -221,7 +219,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
-           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, gpu: int = None):   
+           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}'
@@ -247,7 +245,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
-                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu)
+                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps)
     # save the student model 
     student_model.save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
 
@@ -318,8 +316,9 @@ if __name__ == "__main__":
     parser.add_argument("--load_hf_model", action="store_true")
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--is_mamba", action="store_true", default=False)
-    
     parser.add_argument("--gpu", type=int, default=None)
+    parser.add_argument("--accumulation_steps", type=int, default=1)
+
     args = parser.parse_args()
 
     wandb.init(
@@ -332,12 +331,13 @@ if __name__ == "__main__":
                 "learning_rate": str(args.learning_rate),
                 "model_path": str(args.model_path),
                 "is_mamba": str(args.is_mamba),
+                "accumulation_steps": str(args.accumulation_steps)
         }
        )
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
-          model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu)
+          model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
