@@ -3,7 +3,8 @@ from typing import Union
 import torch
 import torch.nn as nn
 from torch.nn import DataParallel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler
+from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -16,7 +17,7 @@ import wandb
 
 
 
-
+accelerator = Accelerator()
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
@@ -34,6 +35,7 @@ def get_sanity_student_model(path: str=None):
         config.eos_token_id = teacher_model_config.eos_token_id
         config.bos_token_id = teacher_model_config.bos_token_id
         config.vocab_size = teacher_model_config.vocab_size
+        config.num_hidden_layers = config.num_hidden_layers 
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
     # adapt TinyLlama-1.1B to the teacher model
@@ -88,7 +90,7 @@ HF_PADDING_IGNORE = -100
 def init_dataloader(batch_size: int, max_length: int, partition: str = "train"):
 
     dataset_path = "wikitext-2-v1"
-    dataset = load_dataset("wikitext", dataset_path, streaming=True) #
+    dataset = load_dataset("wikitext", dataset_path) #
 
     
     # Load the teacher tokenizer
@@ -127,7 +129,8 @@ def logits_to_tokens(logits):
     return torch.argmax(logits, dim=-1)
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
-                       batch_size: int, max_length: int, limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None):
+                       batch_size: int, max_length: int,
+                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None):
     device = f'cuda{f":{gpu}" if gpu else ""}'
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
@@ -139,31 +142,34 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
 
-    for epoch in range(epochs):
+    train_dataloader, pad_token_id = init_dataloader(batch_size, max_length, "train")
+    eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
+    lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(train_dataloader))
 
-        
-        dataloader, pad_token_id = init_dataloader(batch_size, max_length)
-        for batch_idx, batch in tqdm(enumerate(islice(dataloader, limit))):
-            batched_input_ids = batch['input_ids'].to(device)
+    train_dataloader, eval_dataloader, model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, model, optimizer)
+
+    for epoch in range(epochs):
+        for batch_idx, batch in tqdm(enumerate(islice(train_dataloader, limit))):
+            batched_input_ids = batch['input_ids']#.to(device)
             
-            inputs = batched_input_ids[:, :-1].contiguous().to(device)
-            labels = batched_input_ids[:, 1:].contiguous().to(device)
+            inputs = batched_input_ids[:, :-1].contiguous()#.to(device)
+            labels = batched_input_ids[:, 1:].contiguous()#.to(device)
             labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-            batched_attention_mask = batch['attention_mask'].to(device)
-            attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+            batched_attention_mask = batch['attention_mask']#.to(device)
+            attention_mask = batched_attention_mask[:, :-1].contiguous()#.to(device)
             
             with torch.no_grad():
                 teacher_outputs = teacher_model(input_ids=inputs,
                                                  attention_mask=attention_mask
-                                                ).logits.to(device)
+                                                ).logits#.to(device)
             if isinstance(student_model, MambaLMHeadModel):
                 student_outputs = student_model(input_ids=inputs,
-                                                ).logits.to(device)
+                                                ).logits#.to(device)
             else:
                 student_outputs = student_model(input_ids=inputs,
                                                 attention_mask=attention_mask
-                                                ).logits.to(device) 
+                                                ).logits#.to(device) 
 
             if first_batch:
                 print(f"Student logits shape: {student_outputs.shape}")
@@ -184,8 +190,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             running_cross_entropy_loss += student_label_loss.item()
 
             optimizer.zero_grad()
-            loss.backward()
-
+            # loss.backward() 
+            accelerator.backward(loss)
+            lr_scheduler.step()
             # Gradient clipping
             torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
             
@@ -219,25 +226,26 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}'
     teacher_model = get_teacher_model(teacher_model_path)
-    teacher_model.to(device)
+    teacher_model#.to(device)
     teacher_model = DataParallel(teacher_model)
     teacher_model.eval()
     print_model_parameters(teacher_model_path, teacher_model)
     if load_hf_model:
         if not is_mamba:
-            student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+            student_model = AutoModelForCausalLM.from_pretrained(model_path)#.to(device)
             student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
-            student_model = get_sanity_student_model().to(device)
+            student_model = get_sanity_student_model()#.to(device)
             student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
     
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
+    
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu)
     # save the student model 
@@ -245,7 +253,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 
 # Evaluate the student model
-def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], gpu: int = None):
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None):
 
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
@@ -254,28 +262,31 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
         student_model = model_or_path
     
     student_model.eval()
-    dataloader, pad_token_id = init_dataloader(8, 128, "test")
+    if eval_dataloader is None:
+        dataloader, pad_token_id = init_dataloader(8, 128, "test")
+    else:
+        dataloader, pad_token_id = eval_dataloader, pad_token_id
     device = f'cuda{f":{gpu}" if gpu else ""}'
     # evalua using the test dataset
     running_loss = 0
     counter = 0
     for batch in tqdm(dataloader):
         counter += 1
-        batched_input_ids = batch['input_ids'].to(device)
-        inputs = batched_input_ids[:, :-1].contiguous().to(device)
-        labels = batched_input_ids[:, 1:].contiguous().to(device)
+        batched_input_ids = batch['input_ids']#.to(device)
+        inputs = batched_input_ids[:, :-1].contiguous()#.to(device)
+        labels = batched_input_ids[:, 1:].contiguous()#.to(device)
         labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-        batched_attention_mask = batch['attention_mask'].to(device)
-        attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+        batched_attention_mask = batch['attention_mask']#.to(device)
+        attention_mask = batched_attention_mask[:, :-1].contiguous()#.to(device)
 
         if isinstance(student_model, MambaLMHeadModel):
             student_outputs = student_model(input_ids=inputs,
-                                        ).logits.to(device)
+                                        ).logits#.to(device)
         else:
             student_outputs = student_model(input_ids=inputs,
                                             attention_mask=attention_mask
-                                            ).logits.to(device)
+                                            ).logits#.to(device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
