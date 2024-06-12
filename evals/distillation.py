@@ -55,7 +55,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
         "d_model": 2560,
-        "n_layer": teacher_model.config.num_hidden_layers // 4, # 22 in case of TinyLlama-1.1B
+        "n_layer": teacher_model.config.num_hidden_layers // 3, # 22 in case of TinyLlama-1.1B
         "vocab_size": teacher_model.config.vocab_size,
         "ssm_cfg": {},
         "rms_norm": True,
