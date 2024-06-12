@@ -17,8 +17,9 @@ def setup_distributed():
     if "RANK" not in os.environ or "WORLD_SIZE" not in os.environ:
         os.environ["RANK"] = "0"
         os.environ["WORLD_SIZE"] = "1"
+    if "MASTER_ADDR" not in os.environ or "MASTER_PORT" not in os.environ:        
         os.environ["MASTER_ADDR"] = "localhost"
-        os.environ["MASTER_PORT"] = "12355"
+        os.environ["MASTER_PORT"] = "58055"
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
     torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -286,7 +287,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     wandb.init(
-        project="MAMBA-KD",
+        project="MAMBA-KD-dist",
         config={
             "limit": args.limit,
             "batch_size": args.batch_size,
