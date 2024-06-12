@@ -145,7 +145,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     train_dataloader, pad_token_id = init_dataloader(batch_size, max_length, "train")
     eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(train_dataloader))
-    
+
     train_dataloader, eval_dataloader, student_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, optimizer)
     for epoch in range(epochs):
         for batch_idx, batch in tqdm(enumerate(islice(train_dataloader, limit))):
@@ -223,8 +223,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}'
     teacher_model = get_teacher_model(teacher_model_path)
-    # teacher_model.to(device)
-    # teacher_model = DataParallel(teacher_model)
+    teacher_model.to(device)
+    teacher_model = DataParallel(teacher_model)
     teacher_model.eval()
     print_model_parameters(teacher_model_path, teacher_model)
     if load_hf_model:
