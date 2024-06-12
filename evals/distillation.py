@@ -146,29 +146,29 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(train_dataloader))
 
-    train_dataloader, eval_dataloader, student_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, optimizer)
+    # train_dataloader, eval_dataloader, student_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, optimizer)
     for epoch in range(epochs):
         for batch_idx, batch in tqdm(enumerate(islice(train_dataloader, limit))):
-            batched_input_ids = batch['input_ids']#.to(device)
+            batched_input_ids = batch['input_ids'].to(device)
             
-            inputs = batched_input_ids[:, :-1].contiguous()#.to(device)
-            labels = batched_input_ids[:, 1:].contiguous()#.to(device)
+            inputs = batched_input_ids[:, :-1].contiguous().to(device)
+            labels = batched_input_ids[:, 1:].contiguous().to(device)
             labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-            batched_attention_mask = batch['attention_mask']#.to(device)
-            attention_mask = batched_attention_mask[:, :-1].contiguous()#.to(device)
+            batched_attention_mask = batch['attention_mask'].to(device)
+            attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
             
             with torch.no_grad():
                 teacher_outputs = teacher_model(input_ids=inputs,
                                                  attention_mask=attention_mask
-                                                ).logits#.to(device)
+                                                ).logits.to(device)
             if isinstance(student_model, MambaLMHeadModel):
                 student_outputs = student_model(input_ids=inputs,
-                                                ).logits#.to(device)
+                                                ).logits.to(device)
             else:
                 student_outputs = student_model(input_ids=inputs,
                                                 attention_mask=attention_mask
-                                                ).logits#.to(device) 
+                                                ).logits.to(device) 
 
             if first_batch:
                 print(f"Student logits shape: {student_outputs.shape}")
@@ -229,14 +229,14 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     print_model_parameters(teacher_model_path, teacher_model)
     if load_hf_model:
         if not is_mamba:
-            student_model = AutoModelForCausalLM.from_pretrained(model_path)#.to(device)
-            # student_model = DataParallel(student_model)
+            student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+            student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
-            student_model = get_sanity_student_model()#.to(device)
-            # student_model = DataParallel(student_model)
+            student_model = get_sanity_student_model().to(device)
+            student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
     
@@ -269,21 +269,21 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
     counter = 0
     for batch in tqdm(dataloader):
         counter += 1
-        batched_input_ids = batch['input_ids']#.to(device)
-        inputs = batched_input_ids[:, :-1].contiguous()#.to(device)
-        labels = batched_input_ids[:, 1:].contiguous()#.to(device)
+        batched_input_ids = batch['input_ids'].to(device)
+        inputs = batched_input_ids[:, :-1].contiguous().to(device)
+        labels = batched_input_ids[:, 1:].contiguous().to(device)
         labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-        batched_attention_mask = batch['attention_mask']#.to(device)
-        attention_mask = batched_attention_mask[:, :-1].contiguous()#.to(device)
+        batched_attention_mask = batch['attention_mask'].to(device)
+        attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
 
         if isinstance(student_model, MambaLMHeadModel):
             student_outputs = student_model(input_ids=inputs,
-                                        ).logits#.to(device)
+                                        ).logits.to(device)
         else:
             student_outputs = student_model(input_ids=inputs,
                                             attention_mask=attention_mask
-                                            ).logits#.to(device)
+                                            ).logits.to(device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
