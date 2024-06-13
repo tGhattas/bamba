@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn import DataParallel
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler
-from accelerate import Accelerator
+# from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -17,7 +17,7 @@ import wandb
 
 
 
-accelerator = Accelerator()
+# accelerator = Accelerator()
 # teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 pretrained_mamba_tokenizer = "EleutherAI/gpt-neox-20b" # used in benchmarks/benchmark_generation_mamba_simple.py
@@ -191,7 +191,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             running_cross_entropy_loss += student_label_loss.item()
             if (batch_idx + 1) % accumulation_steps == 0:
                 optimizer.zero_grad()
-                accelerator.backward(loss)
+                # accelerator.backward(loss)
+                loss.backward()
                 lr_scheduler.step()
                 # Gradient clipping
                 torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
