@@ -145,7 +145,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_cross_entropy_loss = 0
 
     train_dataloader, pad_token_id = init_dataloader(batch_size, max_length, "train")
-    eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
+    # eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(train_dataloader))
 
     # train_dataloader, eval_dataloader, student_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, optimizer)
