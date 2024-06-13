@@ -18,8 +18,10 @@ import wandb
 
 
 accelerator = Accelerator()
-teacher_model_path = "meta-llama/Meta-Llama-3-8B"
+# teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+pretrained_mamba_tokenizer = "EleutherAI/gpt-neox-20b" # used in benchmarks/benchmark_generation_mamba_simple.py
+teacher_model_path = pretrained_mamba_tokenizer
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 def get_teacher_model(path: str):
     return AutoModelForCausalLM.from_pretrained(path)
@@ -35,7 +37,7 @@ def get_sanity_student_model(path: str=None):
         config.eos_token_id = teacher_model_config.eos_token_id
         config.bos_token_id = teacher_model_config.bos_token_id
         config.vocab_size = teacher_model_config.vocab_size
-        config.num_hidden_layers = int(0.2*config.num_hidden_layers)
+        config.num_hidden_layers = config.num_hidden_layers
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
     # adapt TinyLlama-1.1B to the teacher model
@@ -55,7 +57,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
          return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
         "d_model": 2560,
-        "n_layer": teacher_model.config.num_hidden_layers // 3, # 22 in case of TinyLlama-1.1B
+        "n_layer": teacher_model.config.num_hidden_layers // 4,
         "vocab_size": teacher_model.config.vocab_size,
         "ssm_cfg": {},
         "rms_norm": True,
@@ -340,5 +342,7 @@ if __name__ == "__main__":
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --load_chkpt --model_path ./checkpoints/student_chkpt_epoch_0_type_mamba_max_length_256.pt --is_mamba --gpu 0
-    # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B --is_mamba
+    # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B 
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
+    # python evals/distillation.py --limit 1000000000000 --batch_size 2 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path state-spaces/mamba-790m-hf --accumulation_steps 16 
+
