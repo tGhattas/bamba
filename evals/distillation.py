@@ -230,23 +230,24 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     if load_hf_model:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
-            student_model = DataParallel(student_model)
+            # student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
             student_model = get_sanity_student_model().to(device)
-            student_model = DataParallel(student_model)
+            # student_model = DataParallel(student_model)
         else:
             student_model = get_mamba_model(gpu=gpu)
-    
+    student_model = DataParallel(student_model)
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps)
-    # save the student model 
-    student_model.save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
+    # save the student model
+     
+    student_model.module.save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
 
 
 # Evaluate the student model
