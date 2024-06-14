@@ -18,11 +18,12 @@ import wandb
 
 
 # accelerator = Accelerator()
-# teacher_model_path = "meta-llama/Meta-Llama-3-8B"
+teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 pretrained_mamba_tokenizer = "EleutherAI/gpt-neox-20b" # used in benchmarks/benchmark_generation_mamba_simple.py
-teacher_model_path = pretrained_mamba_tokenizer
+# teacher_model_path = pretrained_mamba_tokenizer
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
+
 def get_teacher_model(path: str):
     return AutoModelForCausalLM.from_pretrained(path)
 
@@ -89,7 +90,7 @@ HF_PADDING_IGNORE = -100
 
 
 
-def init_dataloader(batch_size: int, max_length: int, partition: str = "train"):
+def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer_path: str = None):
 
     dataset_path = "wikitext-2-v1"
     dataset = load_dataset("wikitext", dataset_path) #
@@ -98,24 +99,43 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train"):
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
 
+    if student_tokenizer_path:
+        student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer_path, use_fast=True)
+        student_tokenizer.pad_token = student_tokenizer.eos_token
+        def student_tokenize_function(examples):
+            return student_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
+        
+        student_tokenized_datasets = dataset.map(student_tokenize_function, batched=True, remove_columns=["text"])
+        student_data_collator = DataCollatorForLanguageModeling(
+            tokenizer=student_tokenized_datasets,
+            mlm=False,  # Set to True if using Masked Language Modeling
+            pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
+        )
+        student_data_loader = DataLoader(student_tokenized_datasets[partition], batch_size=batch_size, collate_fn=student_data_collator)
+
+
     #add paddign token to the tokenizer
     teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
 
     # Tokenize the dataset
-    def tokenize_function(examples):
+    def teacher_tokenize_function(examples):
         return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
 
-    tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
+    teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, remove_columns=["text"])
 
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=teacher_tokenizer,
+    teacher_data_collator = DataCollatorForLanguageModeling(
+        tokenizer=teacher_tokenized_datasets,
         mlm=False,  # Set to True if using Masked Language Modeling
         pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
     )
     
     # Create the data loader
-    data_loader = DataLoader(tokenized_datasets[partition], batch_size=batch_size, collate_fn=data_collator)
-    return data_loader, teacher_tokenizer.pad_token_id
+    teacher_data_loader = DataLoader(teacher_tokenized_datasets[partition], batch_size=batch_size, collate_fn=teacher_data_collator)
+
+    if student_tokenizer_path:
+        return teacher_data_loader, student_data_loader, teacher_tokenizer.pad_token_id
+    
+    return teacher_data_loader, teacher_tokenizer.pad_token_id
 
 
 def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, MambaLMHeadModel]):
@@ -144,31 +164,43 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
 
-    train_dataloader, pad_token_id = init_dataloader(batch_size, max_length, "train")
+    dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
+    if  model_path:
+        teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
+        student_tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+        teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+    else:
+        teacher_train_dataloader, pad_token_id = dataloader
+
     # eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
-    lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(train_dataloader))
+    lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(teacher_train_dataloader))
 
     # train_dataloader, eval_dataloader, student_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, optimizer)
+
+    other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     for epoch in range(epochs):
-        for batch_idx, batch in tqdm(enumerate(islice(train_dataloader, limit))):
-            batched_input_ids = batch['input_ids'].to(device)
+        for batch_idx, (teacher_batch, student_batch)  in tqdm(enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit))):
+            teacher_batched_input_ids = teacher_batch['input_ids'].to(device)
+            student_batched_input_ids = student_batch['input_ids'].to(device)
             
-            inputs = batched_input_ids[:, :-1].contiguous().to(device)
-            labels = batched_input_ids[:, 1:].contiguous().to(device)
+            teacher_inputs = teacher_batched_input_ids[:, :-1].contiguous().to(device)
+            student_inputs = student_batched_input_ids[:, :-1].contiguous().to(device)
+
+            labels = student_batched_input_ids[:, 1:].contiguous().to(device)
             labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-            batched_attention_mask = batch['attention_mask'].to(device)
+            batched_attention_mask = teacher_batch['attention_mask'].to(device)
             attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
             
             with torch.no_grad():
-                teacher_outputs = teacher_model(input_ids=inputs,
+                teacher_outputs = teacher_model(input_ids=teacher_inputs,
                                                  attention_mask=attention_mask
                                                 ).logits.to(device)
             if isinstance(student_model, MambaLMHeadModel):
-                student_outputs = student_model(input_ids=inputs,
+                student_outputs = student_model(input_ids=student_inputs,
                                                 ).logits.to(device)
             else:
-                student_outputs = student_model(input_ids=inputs,
+                student_outputs = student_model(input_ids=student_inputs,
                                                 attention_mask=attention_mask
                                                 ).logits.to(device) 
 
@@ -176,6 +208,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 print(f"Student logits shape: {student_outputs.shape}")
                 print(f"Teacher logits shape: {teacher_outputs.shape}")
                 first_batch = False
+            if model_path:
+                student_outputs_tokens = logits_to_tokens(student_outputs)
+                # detokenize wuth the student tokenizer and re tokenize with the teacher tokenizer
+                student_outputs_text = student_tokenizer.batch_decode(student_outputs_tokens)
+                student_outputs_retokenized = teacher_tokenizer(student_outputs_text, truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
+                student_outputs = student_outputs_retokenized
+            
 
             # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
             distillation_loss = nn.KLDivLoss(reduction="batchmean")(
