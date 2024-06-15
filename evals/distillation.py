@@ -95,13 +95,9 @@ HF_PADDING_IGNORE = -100
 def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer_path: str = None):
 
     dataset_path = "wikitext-2-v1"
-    dataset = load_dataset("wikitext", dataset_path) #
-
-    
-    # Load the teacher tokenizer
-    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
 
     if student_tokenizer_path:
+        dataset = load_dataset("wikitext", dataset_path)
         student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer_path, use_fast=True)
         student_tokenizer.pad_token = student_tokenizer.eos_token
         def student_tokenize_function(examples):
@@ -114,9 +110,11 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
             pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
         )
         student_data_loader = DataLoader(student_tokenized_datasets[partition], batch_size=batch_size, collate_fn=student_data_collator)
-
-
-    #add paddign token to the tokenizer
+    
+    dataset = load_dataset("wikitext", dataset_path)
+    # Load the teacher tokenizer
+    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+    # add padding token to the tokenizer
     teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
 
     # Tokenize the dataset
