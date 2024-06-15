@@ -217,7 +217,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 student_outputs_retokenized = teacher_tokenizer(student_outputs_text, truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
                 student_outputs = student_outputs_retokenized['input_ids'].to(device)
             
-
+            # print shapes
+            print(f"Student logits shape: {student_outputs.shape}")
+            print(f"Teacher logits shape: {teacher_outputs.shape}")
             # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
             distillation_loss = nn.KLDivLoss(reduction="batchmean")(
                 torch.log_softmax(student_outputs / temperature, dim=-1),
@@ -243,6 +245,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 wandb.log({"epoch": epoch, "runningl_loss": running_loss / log_interval})
                 wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss / log_interval})
                 wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss / log_interval})
+                wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
                 running_loss = 0
                 running_distillation_loss = 0
                 running_cross_entropy_loss = 0
