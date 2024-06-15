@@ -55,7 +55,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
     param = next(teacher_model.parameters())
     teacher_dtype = param.dtype
     if path:
-        mamba_student_model = MambaForCausalLM.from_pretrained(path)
+        mamba_student_model = MambaForCausalLM.from_pretrained(path).to(device)
         config = mamba_student_model.config
     else:
         config_data = {
