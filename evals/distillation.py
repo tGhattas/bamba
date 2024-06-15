@@ -215,7 +215,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 # detokenize wuth the student tokenizer and re tokenize with the teacher tokenizer
                 student_outputs_text = student_tokenizer.batch_decode(student_outputs_tokens)
                 student_outputs_retokenized = teacher_tokenizer(student_outputs_text, truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
-                student_outputs = student_outputs_retokenized
+                student_outputs = student_outputs_retokenized['input_ids'].to(device)
             
 
             # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
