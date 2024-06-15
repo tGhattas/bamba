@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 from torch.nn import DataParallel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM
 # from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
@@ -55,7 +55,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
     param = next(teacher_model.parameters())
     teacher_dtype = param.dtype
     if path:
-         return MambaLMHeadModel.from_pretrained(path, device=device, dtype=teacher_dtype)
+         return MambaForCausalLM.from_pretrained(path, device=device, dtype=teacher_dtype)
     config_data = {
         "d_model": 2560,
         "n_layer": teacher_model.config.num_hidden_layers // 4,
