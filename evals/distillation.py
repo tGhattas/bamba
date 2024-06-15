@@ -105,7 +105,7 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
         
         student_tokenized_datasets = dataset.map(student_tokenize_function, batched=True, remove_columns=["text"])
         student_data_collator = DataCollatorForLanguageModeling(
-            tokenizer=student_tokenized_datasets,
+            tokenizer=student_tokenizer,
             mlm=False,  # Set to True if using Masked Language Modeling
             pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
         )
@@ -124,7 +124,7 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
     teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, remove_columns=["text"])
 
     teacher_data_collator = DataCollatorForLanguageModeling(
-        tokenizer=teacher_tokenized_datasets,
+        tokenizer=teacher_tokenizer,
         mlm=False,  # Set to True if using Masked Language Modeling
         pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
     )
