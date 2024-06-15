@@ -168,7 +168,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     if  model_path:
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
         student_tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+        student_tokenizer.pad_token = student_tokenizer.eos_token
         teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+        teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
     else:
         teacher_train_dataloader, pad_token_id = dataloader
 
