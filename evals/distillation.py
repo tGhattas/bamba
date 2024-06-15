@@ -55,24 +55,26 @@ def get_mamba_model(path: str = None, gpu: int = None):
     param = next(teacher_model.parameters())
     teacher_dtype = param.dtype
     if path:
-         return MambaForCausalLM.from_pretrained(path, device=device, dtype=teacher_dtype)
-    config_data = {
-        "d_model": 2560,
-        "n_layer": teacher_model.config.num_hidden_layers // 4,
-        "vocab_size": teacher_model.config.vocab_size,
-        "ssm_cfg": {},
-        "rms_norm": True,
-        "residual_in_fp32": True,
-        "fused_add_norm": True,
-        "pad_vocab_size_multiple": 8
-    }
-    config = MambaConfig(**config_data)
-    
-    mamba_student_model = MambaLMHeadModel(config,
-            initializer_cfg=None,
-            device=device,
-            dtype=teacher_dtype,
-            )
+        mamba_student_model = MambaForCausalLM.from_pretrained(path)
+        config = mamba_student_model.config
+    else:
+        config_data = {
+            "d_model": 2560,
+            "n_layer": teacher_model.config.num_hidden_layers // 4,
+            "vocab_size": teacher_model.config.vocab_size,
+            "ssm_cfg": {},
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 8
+        }
+        config = MambaConfig(**config_data)
+        
+        mamba_student_model = MambaLMHeadModel(config,
+                initializer_cfg=None,
+                device=device,
+                dtype=teacher_dtype,
+                )
     # log the number of hidden layers
     print(f"get_mamba_model: Number of hidden layers in the student model: {config.n_layer}")
     print_model_parameters("MAMBA", mamba_student_model)
