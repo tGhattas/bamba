@@ -17,6 +17,15 @@ import wandb
 
 
 
+class EmbeddingProjectionLayer(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.projection = nn.Linear(in_dim, out_dim)
+
+    def forward(self, x):
+        return self.projection(x)
+
+
 # accelerator = Accelerator()
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -60,7 +69,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
     else:
         config_data = {
             "d_model": 2560,
-            "n_layer": teacher_model.config.num_hidden_layers // 4,
+            "n_layer": teacher_model.config.num_hidden_layers,
             "vocab_size": teacher_model.config.vocab_size,
             "ssm_cfg": {},
             "rms_norm": True,
@@ -154,6 +163,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                        batch_size: int, max_length: int,
                          limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1):
     device = f'cuda{f":{gpu}" if gpu else ""}'
+
+    projection_layer = EmbeddingProjectionLayer(teacher_model.config.hidden_size, student_model.config.hidden_size).to(device)
+
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
 
@@ -167,10 +179,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
-        student_tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
-        student_tokenizer.pad_token = student_tokenizer.eos_token
-        teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
-        teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
     else:
         teacher_train_dataloader, pad_token_id = dataloader
 
@@ -211,15 +219,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 print(f"Teacher logits shape: {teacher_outputs.shape}")
                 first_batch = False
             if model_path:
-                student_outputs_tokens = logits_to_tokens(student_outputs)
-                # detokenize wuth the student tokenizer and re tokenize with the teacher tokenizer
-                student_outputs_text = student_tokenizer.batch_decode(student_outputs_tokens)
-                student_outputs_retokenized = teacher_tokenizer(student_outputs_text, truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
-                student_outputs = student_outputs_retokenized['input_ids'].to(device)
-            
-            # print shapes
-            print(f"Student logits shape: {student_outputs.shape}")
-            print(f"Teacher logits shape: {teacher_outputs.shape}")
+                student_outputs = projection_layer(student_outputs)
+
+            assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
             # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
             distillation_loss = nn.KLDivLoss(reduction="batchmean")(
                 torch.log_softmax(student_outputs / temperature, dim=-1),
