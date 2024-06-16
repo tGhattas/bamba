@@ -179,7 +179,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     if  model_path:
         teacher_config = teacher_model.config if not isinstance(teacher_model, DataParallel) else teacher_model.module.config
         student_config = student_model.config if not isinstance(student_model, DataParallel) else student_model.module.config
-        projection_layer = EmbeddingProjectionLayer(teacher_config.vocab_size, student_config.vocab_size).to(device)
+        projection_layer = EmbeddingProjectionLayer(teacher_config.vocab_size, student_config.vocab_size)
+        projection_layer = DataParallel(projection_layer).to(device)
+
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
     else:
         teacher_train_dataloader, pad_token_id = dataloader
@@ -290,7 +292,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         else:
             student_model = get_mamba_model(gpu=gpu)
     
-    student_model = DataParallel(student_model) if not is_mamba else student_model
+    student_model = DataParallel(student_model)# if not is_mamba else student_model
     student_model.train()
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     
