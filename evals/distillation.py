@@ -164,7 +164,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                          limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1):
     device = f'cuda{f":{gpu}" if gpu else ""}'
 
-    projection_layer = EmbeddingProjectionLayer(teacher_model.config.hidden_size, student_model.config.hidden_size).to(device)
+    projection_layer = EmbeddingProjectionLayer(teacher_model.config.vocab_size, student_model.config.vocab_size).to(device)
 
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
