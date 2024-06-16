@@ -161,7 +161,7 @@ def logits_to_tokens(logits):
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
-                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1):
+                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1, projection_layer: EmbeddingProjectionLayer = None):
     device = f'cuda{f":{gpu}" if gpu else ""}'
 
 
@@ -177,11 +177,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
-        teacher_config = teacher_model.config if not isinstance(teacher_model, DataParallel) else teacher_model.module.config
-        student_config = student_model.config if not isinstance(student_model, DataParallel) else student_model.module.config
-        projection_layer = EmbeddingProjectionLayer(teacher_config.vocab_size, student_config.vocab_size)
-        projection_layer = DataParallel(projection_layer).to(device)
-
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
     else:
         teacher_train_dataloader, pad_token_id = dataloader
@@ -216,13 +211,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             else:
                 student_outputs = student_model(input_ids=student_inputs,
                                                 attention_mask=attention_mask
-                                                ).logits.to(device) 
+                                                ).logits.to(device)     
 
             if first_batch:
                 print(f"Student logits shape: {student_outputs.shape}")
                 print(f"Teacher logits shape: {teacher_outputs.shape}")
                 first_batch = False
-            if model_path:
+            if projection_layer is not None:
                 teacher_outputs = projection_layer(teacher_outputs)
 
             assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
@@ -294,10 +289,17 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     
     student_model = DataParallel(student_model)# if not is_mamba else student_model
     student_model.train()
-    optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
+
+    projection_layer = None
+    if model_path:
+        projection_layer = EmbeddingProjectionLayer(teacher_model.module.config.vocab_size if isinstance(teacher_model, DataParallel) else teacher_model.config.vocab_size,
+                                                    student_model.module.config.vocab_size if isinstance(student_model, DataParallel) else student_model.config.vocab_size)
+        projection_layer = DataParallel(projection_layer).to(device)
+
+    optimizer = torch.optim.Adam(list(student_model.parameters()) + list(projection_layer.parameters()), lr=learning_rate)
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
-                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps)
+                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps, projection_layer=projection_layer)
     # save the student model
     (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
 
