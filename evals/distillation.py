@@ -164,7 +164,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                          limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1):
     device = f'cuda{f":{gpu}" if gpu else ""}'
 
-    projection_layer = EmbeddingProjectionLayer(teacher_model.config.vocab_size, student_model.config.vocab_size).to(device)
 
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
@@ -178,6 +177,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
+        projection_layer = EmbeddingProjectionLayer(teacher_model.config.vocab_size, student_model.config.vocab_size).to(device)
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
     else:
         teacher_train_dataloader, pad_token_id = dataloader
@@ -219,7 +219,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 print(f"Teacher logits shape: {teacher_outputs.shape}")
                 first_batch = False
             if model_path:
-                student_outputs = projection_layer(student_outputs)
+                teacher_outputs = projection_layer(teacher_outputs)
 
             assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
             # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
