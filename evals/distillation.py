@@ -177,7 +177,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
-        projection_layer = EmbeddingProjectionLayer(teacher_model.config.vocab_size, student_model.config.vocab_size).to(device)
+        teacher_config = teacher_model.config if not isinstance(teacher_model, DataParallel) else teacher_model.module.config
+        student_config = student_model.config if not isinstance(student_model, DataParallel) else student_model.module.config
+        projection_layer = EmbeddingProjectionLayer(teacher_config.vocab_size, student_config.vocab_size).to(device)
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
     else:
         teacher_train_dataloader, pad_token_id = dataloader
