@@ -1,4 +1,4 @@
-# universal logit loss - taken from https://github.com/Nicolas-BZRD/llm-recipes/blob/main/models/distillation_model.py
+# universal logit loss - based on https://github.com/Nicolas-BZRD/llm-recipes/blob/main/models/distillation_model.py
 
 from torch import nn
 import torch
