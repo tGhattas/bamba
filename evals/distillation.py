@@ -265,6 +265,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 if batch_idx % (log_interval * 4) == 0:
                     # evaluate the student model
                     evaluate(student_model, gpu=gpu)
+                    student_model.train()
                 
                 lr_scheduler.step()
                 progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{len(teacher_train_dataloader)} | Loss: {loss.item()}")
@@ -316,11 +317,11 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 
 # Evaluate the student model
-def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None):
-
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None):
+    device = f'cuda{f":{gpu}" if gpu else ""}'
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
-        student_model = AutoModelForCausalLM.from_pretrained(model_or_path)#.to(f'cuda{f":{gpu}" if gpu else ""}')
+        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(device)
     else:
         student_model = model_or_path
     
@@ -329,10 +330,11 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
         dataloader, pad_token_id = init_dataloader(8, 128, "test")
     else:
         dataloader, pad_token_id = eval_dataloader, pad_token_id
-    device = f'cuda{f":{gpu}" if gpu else ""}'
+    
     # evalua using the test dataset
     running_loss = 0
     counter = 0
+    student_model_eval = student_model.module if isinstance(student_model, DataParallel) else student_model
     for batch in tqdm(dataloader):
         counter += 1
         batched_input_ids = batch['input_ids'].to(device)
@@ -342,14 +344,15 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
 
         batched_attention_mask = batch['attention_mask'].to(device)
         attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+        with torch.no_grad():
 
-        if isinstance(student_model, (MambaLMHeadModel, MambaForCausalLM)):
-            student_outputs = student_model(input_ids=inputs,
-                                        ).logits.to(device)
-        else:
-            student_outputs = student_model(input_ids=inputs,
-                                            attention_mask=attention_mask
+            if isinstance(student_model_eval, (MambaLMHeadModel, MambaForCausalLM)):
+                student_outputs = student_model_eval(input_ids=inputs,
                                             ).logits.to(device)
+            else:
+                student_outputs = student_model_eval(input_ids=inputs,
+                                                attention_mask=attention_mask
+                                                ).logits.to(device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
@@ -358,6 +361,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
     wandb.log({"test_loss": running_loss / counter})
     perplexity = np.exp(running_loss / counter)
     wandb.log({"test_perplexity": perplexity})
+    
     
 
     
