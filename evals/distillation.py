@@ -59,6 +59,7 @@ def get_sanity_student_model(path: str=None):
     # adapt TinyLlama-1.1B to the teacher model
 
     print_model_parameters("Sanity Student", model)
+    pprint(model.config)
     return model
 
 
@@ -95,10 +96,9 @@ def get_mamba_model(path: str = None, gpu: int = None):
         #         device=device,
         #         dtype=teacher_dtype,
         #         )
-    # log the number of hidden layers
-    print(f"get_mamba_model: Number of hidden layers in the student model: {config.n_layer}")
-    pprint(config)
+
     print_model_parameters("MAMBA", mamba_student_model)
+    pprint(config)
     return mamba_student_model
 
 
