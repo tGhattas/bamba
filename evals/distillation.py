@@ -36,6 +36,7 @@ class EmbeddingProjectionLayer(nn.Module):
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+teacher_model_path = sanity_model_path #TODO
 pretrained_mamba_tokenizer = "EleutherAI/gpt-neox-20b" # used in benchmarks/benchmark_generation_mamba_simple.py
 # teacher_model_path = pretrained_mamba_tokenizer
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
