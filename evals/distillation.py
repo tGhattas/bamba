@@ -343,7 +343,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel], 
         batched_attention_mask = batch['attention_mask'].to(device)
         attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
 
-        if isinstance(student_model, MambaLMHeadModel):
+        if isinstance(student_model, (MambaLMHeadModel, MambaForCausalLM)):
             student_outputs = student_model(input_ids=inputs,
                                         ).logits.to(device)
         else:
