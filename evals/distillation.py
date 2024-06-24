@@ -233,18 +233,18 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 with torch.no_grad():
                     teacher_outputs = teacher_model(input_ids=teacher_inputs,
                                                     attention_mask=attention_mask
-                                                    ).logits.to(device)
+                                                    )
                 if isinstance(student_model, MambaLMHeadModel):
                     student_outputs = student_model(input_ids=student_inputs,
-                                                    ).logits.to(device)
+                                                    )
                 else:
                     student_outputs = student_model(input_ids=student_inputs,
                                                     attention_mask=attention_mask
-                                                    ).logits.to(device)     
+                                                    )
 
                 if first_batch:
-                    print(f"Student logits shape: {student_outputs.shape}")
-                    print(f"Teacher logits shape: {teacher_outputs.shape}")
+                    print(f"Student logits shape: {student_outputs.logits.shape}")
+                    print(f"Teacher logits shape: {teacher_outputs.logits.shape}")
                     first_batch = False
                 
                 
