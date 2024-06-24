@@ -8,7 +8,7 @@ import torch.nn.functional as F
 class ULDLoss(nn.Module):
 
 
-    def __init__(self, crossentropy_weight=1, distillation_weight=1, student_temperature=1, teacher_temperature=1, skip_student_eos=False, skip_teacher_eos=False, ignore_index=-100):
+    def __init__(self, crossentropy_weight=1, distillation_weight=1, student_temperature=1, teacher_temperature=1, skip_student_eos=False, skip_teacher_eos=False, ignore_idx=-100):
         super().__init__()
         self.crossentropy_weight = crossentropy_weight
         self.distillation_weight = distillation_weight
@@ -16,7 +16,7 @@ class ULDLoss(nn.Module):
         self.teacher_temperature = teacher_temperature
         self.skip_student_eos = skip_student_eos
         self.skip_teacher_eos = skip_teacher_eos
-        self.ignore_index = ignore_index
+        self.ignore_index = ignore_idx
 
     def forward(self, student_predictions, teacher_predictions, student_targets, teacher_targets, rank=0):
         student = student_predictions.logits
