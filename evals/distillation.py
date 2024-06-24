@@ -12,6 +12,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
 from tqdm import tqdm
 import numpy as np
 import argparse
+from memory import MemoryTrace
 # WANDB
 import wandb
 
@@ -24,6 +25,8 @@ class EmbeddingProjectionLayer(nn.Module):
 
     def forward(self, x):
         return self.projection(x)
+    
+
 
 
 # accelerator = Accelerator()
@@ -161,7 +164,7 @@ def logits_to_tokens(logits):
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
-                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1, projection_layer: EmbeddingProjectionLayer = None):
+                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1):
     device = f'cuda{f":{gpu}" if gpu else ""}'
 
 
@@ -188,75 +191,83 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     for epoch in range(epochs):
-        for batch_idx, (teacher_batch, student_batch)  in tqdm(enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit))):
-            teacher_batched_input_ids = teacher_batch['input_ids'].to(device)
-            student_batched_input_ids = student_batch['input_ids'].to(device)
-            
-            teacher_inputs = teacher_batched_input_ids[:, :-1].contiguous().to(device)
-            student_inputs = student_batched_input_ids[:, :-1].contiguous().to(device)
-
-            labels = student_batched_input_ids[:, 1:].contiguous().to(device)
-            labels[labels == pad_token_id] = HF_PADDING_IGNORE
-
-            batched_attention_mask = teacher_batch['attention_mask'].to(device)
-            attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
-            
-            with torch.no_grad():
-                teacher_outputs = teacher_model(input_ids=teacher_inputs,
-                                                 attention_mask=attention_mask
-                                                ).logits.to(device)
-            if isinstance(student_model, MambaLMHeadModel):
-                student_outputs = student_model(input_ids=student_inputs,
-                                                ).logits.to(device)
-            else:
-                student_outputs = student_model(input_ids=student_inputs,
-                                                attention_mask=attention_mask
-                                                ).logits.to(device)     
-
-            if first_batch:
-                print(f"Student logits shape: {student_outputs.shape}")
-                print(f"Teacher logits shape: {teacher_outputs.shape}")
-                first_batch = False
-            if projection_layer is not None:
-                teacher_outputs = projection_layer(teacher_outputs)
-
-            assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
-            # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
-            distillation_loss = nn.KLDivLoss(reduction="batchmean")(
-                torch.log_softmax(student_outputs / temperature, dim=-1),
-                torch.softmax(teacher_outputs / temperature, dim=-1),
-            ) * (temperature ** 2)
-
-            student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
-            
-            loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
-            running_loss += loss.item()
-            running_distillation_loss += distillation_loss.item()
-            running_cross_entropy_loss += student_label_loss.item()
-            if (batch_idx + 1) % accumulation_steps == 0:
-                optimizer.zero_grad()
-                # accelerator.backward(loss)
-                loss.backward()
-                lr_scheduler.step()
-                # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
-                optimizer.step()
-
-            if batch_idx % log_interval == 0:
-                wandb.log({"epoch": epoch, "runningl_loss": running_loss / log_interval})
-                wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss / log_interval})
-                wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss / log_interval})
-                wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
-                running_loss = 0
-                running_distillation_loss = 0
-                running_cross_entropy_loss = 0
-
-            # evaluate the student model every 4 log intervals
-            if batch_idx % (log_interval * 4) == 0:
-                # evaluate the student model
-                evaluate(student_model, gpu=gpu)
+        with MemoryTrace() as mem_trace:
+            progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=len(teacher_train_dataloader), dynamic_ncols=True)
+            for batch_idx, (teacher_batch, student_batch)  in enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit)):
+                teacher_batched_input_ids = teacher_batch['input_ids'].to(device)
+                student_batched_input_ids = student_batch['input_ids'].to(device)
                 
+                teacher_inputs = teacher_batched_input_ids[:, :-1].contiguous().to(device)
+                student_inputs = student_batched_input_ids[:, :-1].contiguous().to(device)
+
+                labels = student_batched_input_ids[:, 1:].contiguous().to(device)
+                labels[labels == pad_token_id] = HF_PADDING_IGNORE
+
+                batched_attention_mask = teacher_batch['attention_mask'].to(device)
+                attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
                 
+                with torch.no_grad():
+                    teacher_outputs = teacher_model(input_ids=teacher_inputs,
+                                                    attention_mask=attention_mask
+                                                    ).logits.to(device)
+                if isinstance(student_model, MambaLMHeadModel):
+                    student_outputs = student_model(input_ids=student_inputs,
+                                                    ).logits.to(device)
+                else:
+                    student_outputs = student_model(input_ids=student_inputs,
+                                                    attention_mask=attention_mask
+                                                    ).logits.to(device)     
+
+                if first_batch:
+                    print(f"Student logits shape: {student_outputs.shape}")
+                    print(f"Teacher logits shape: {teacher_outputs.shape}")
+                    first_batch = False
+                
+
+                assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
+                # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
+                distillation_loss = nn.KLDivLoss(reduction="batchmean")(
+                    torch.log_softmax(student_outputs / temperature, dim=-1),
+                    torch.softmax(teacher_outputs / temperature, dim=-1),
+                ) * (temperature ** 2)
+
+                student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
+                
+                loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
+                running_loss += loss.item()
+                running_distillation_loss += distillation_loss.item()
+                running_cross_entropy_loss += student_label_loss.item()
+                if (batch_idx + 1) % accumulation_steps == 0:
+                    optimizer.zero_grad()
+                    # accelerator.backward(loss)
+                    loss.backward()
+                    lr_scheduler.step()
+                    # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
+                    optimizer.step()
+                    
+                if batch_idx % log_interval == 0:
+                    wandb.log({"epoch": epoch, "runningl_loss": running_loss / log_interval})
+                    wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss / log_interval})
+                    wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss / log_interval})
+                    wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+                    running_loss = 0
+                    running_distillation_loss = 0
+                    running_cross_entropy_loss = 0
+                    progress_bar.update()
+
+                # evaluate the student model every 4 log intervals
+                if batch_idx % (log_interval * 4) == 0:
+                    # evaluate the student model
+                    evaluate(student_model, gpu=gpu)
+                
+                progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{len(teacher_train_dataloader)} | Loss: {loss.item()}")
+
+            progress_bar.close()
+            print(f"Epoch: {epoch} completed")
+        
+        print(mem_trace)
+                    
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
         torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
@@ -290,16 +301,10 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     student_model = DataParallel(student_model)# if not is_mamba else student_model
     student_model.train()
 
-    projection_layer = None
-    if model_path:
-        projection_layer = EmbeddingProjectionLayer(teacher_model.module.config.vocab_size if isinstance(teacher_model, DataParallel) else teacher_model.config.vocab_size,
-                                                    student_model.module.config.vocab_size if isinstance(student_model, DataParallel) else student_model.config.vocab_size)
-        projection_layer = DataParallel(projection_layer).to(device)
-
-    optimizer = torch.optim.Adam(list(student_model.parameters()) + list(projection_layer.parameters()), lr=learning_rate)
+    optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
-                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps, projection_layer=projection_layer)
+                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps)
     # save the student model
     (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
 
