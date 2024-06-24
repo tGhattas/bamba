@@ -14,6 +14,7 @@ import numpy as np
 import argparse
 from memory import MemoryTrace
 from kl_div_loss import KLDivLoss
+from pprint import pprint
 # WANDB
 import wandb
 
@@ -31,6 +32,7 @@ class EmbeddingProjectionLayer(nn.Module):
 
 
 # accelerator = Accelerator()
+hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 pretrained_mamba_tokenizer = "EleutherAI/gpt-neox-20b" # used in benchmarks/benchmark_generation_mamba_simple.py
@@ -71,25 +73,31 @@ def get_mamba_model(path: str = None, gpu: int = None):
         mamba_student_model = MambaForCausalLM.from_pretrained(path).to(device)
         config = mamba_student_model.config
     else:
-        config_data = {
-            "d_model": 2560,
-            "n_layer": teacher_model.config.num_hidden_layers,
-            "vocab_size": teacher_model.config.vocab_size,
-            "ssm_cfg": {},
-            "rms_norm": True,
-            "residual_in_fp32": True,
-            "fused_add_norm": True,
-            "pad_vocab_size_multiple": 8
-        }
-        config = MambaConfig(**config_data)
+        config = AutoConfig.from_pretrained(hf_mamba_path)
+        config.vocab_size = teacher_model.config.vocab_size
+
+        mamba_student_model = MambaForCausalLM(config).to(device)
+
+        # config_data = {
+        #     "d_model": 2560,
+        #     "n_layer": teacher_model.config.num_hidden_layers,
+        #     "vocab_size": teacher_model.config.vocab_size,
+        #     "ssm_cfg": {},
+        #     "rms_norm": True,
+        #     "residual_in_fp32": True,
+        #     "fused_add_norm": True,
+        #     "pad_vocab_size_multiple": 8
+        # }
+        # config = MambaConfig(**config_data)
         
-        mamba_student_model = MambaLMHeadModel(config,
-                initializer_cfg=None,
-                device=device,
-                dtype=teacher_dtype,
-                )
+        # mamba_student_model = MambaLMHeadModel(config,
+        #         initializer_cfg=None,
+        #         device=device,
+        #         dtype=teacher_dtype,
+        #         )
     # log the number of hidden layers
     print(f"get_mamba_model: Number of hidden layers in the student model: {config.n_layer}")
+    pprint(config)
     print_model_parameters("MAMBA", mamba_student_model)
     return mamba_student_model
 
@@ -203,8 +211,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 teacher_inputs = teacher_batched_input_ids[:, :-1].contiguous().to(device)
                 student_inputs = student_batched_input_ids[:, :-1].contiguous().to(device)
 
-                labels = student_batched_input_ids[:, 1:].contiguous().to(device)
-                labels[labels == pad_token_id] = HF_PADDING_IGNORE
+                student_labels = student_batched_input_ids[:, 1:].contiguous().to(device)
+                student_labels[student_labels == pad_token_id] = HF_PADDING_IGNORE
+
+                teacher_labels = teacher_batched_input_ids[:, 1:].contiguous().to(device)
+                teacher_labels[teacher_labels == pad_token_id] = HF_PADDING_IGNORE
 
                 batched_attention_mask = teacher_batch['attention_mask'].to(device)
                 attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
@@ -227,7 +238,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     first_batch = False
                 
                 
-                loss, student_label_loss, distillation_loss = loss_fn(student_outputs, teacher_outputs, labels)
+                loss, student_label_loss, distillation_loss = loss_fn(student_outputs, teacher_outputs, student_labels, teacher_labels)
 
                 running_loss += loss.item()
                 running_distillation_loss += distillation_loss.item()
