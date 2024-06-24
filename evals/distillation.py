@@ -14,6 +14,7 @@ import numpy as np
 import argparse
 from memory import MemoryTrace
 from kl_div_loss import KLDivLoss
+from uld_loss import ULDLoss
 from pprint import pprint
 # WANDB
 import wandb
@@ -187,7 +188,12 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
 
-    loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
+    if model_path is not None:
+        loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
+        print("Using KL Divergence Loss")
+    else:
+        loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1.0, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
+        print("Using ULD Loss")
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:

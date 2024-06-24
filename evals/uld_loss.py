@@ -38,7 +38,7 @@ class ULDLoss(nn.Module):
             size = student_answer_size[i]
             end_shift = shift+size
             student[i] = torch.cat((
-                torch.nn.functional.softmax(student[i, shift:end_shift, :]/self.student_temperature, dim=-1),
+                torch.nn.functional.softmax(student[i, shift:end_shift, :] / self.student_temperature, dim=-1),
                 torch.zeros_like(student[i, :(student.size(1)-size), :])), dim=0
             )
         for i in range(teacher.size(0)):
@@ -46,7 +46,7 @@ class ULDLoss(nn.Module):
             size = teacher_answer_size[i]
             end_shift = shift+size
             teacher[i] = torch.cat((
-                torch.nn.functional.softmax(teacher[i, shift:end_shift, :]/self.teacher_temperature, dim=-1),
+                torch.nn.functional.softmax(teacher[i, shift:end_shift, :] / self.teacher_temperature, dim=-1),
                 torch.zeros_like(teacher[i, :(teacher.size(1)-size), :])), dim=0
             )
 
