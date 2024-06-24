@@ -75,7 +75,7 @@ def get_mamba_model(path: str = None, gpu: int = None):
     else:
         config = AutoConfig.from_pretrained(hf_mamba_path)
         config.vocab_size = teacher_model.config.vocab_size
-
+        config.torch_dtype = teacher_dtype
         mamba_student_model = MambaForCausalLM(config).to(device)
 
         # config_data = {
@@ -187,7 +187,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
 
-    loss_fn = KLDivLoss(reduction='mean', temperature=temperature, padding_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
+    loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
