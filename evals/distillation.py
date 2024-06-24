@@ -13,6 +13,7 @@ from tqdm import tqdm
 import numpy as np
 import argparse
 from memory import MemoryTrace
+from kl_div_loss import KLDivLoss
 # WANDB
 import wandb
 
@@ -178,6 +179,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
 
+    loss_fn = KLDivLoss(reduction='mean', temperature=temperature, padding_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
+
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
@@ -223,17 +226,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     print(f"Teacher logits shape: {teacher_outputs.shape}")
                     first_batch = False
                 
-
-                assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
-                # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
-                distillation_loss = nn.KLDivLoss(reduction="batchmean")(
-                    torch.log_softmax(student_outputs / temperature, dim=-1),
-                    torch.softmax(teacher_outputs / temperature, dim=-1),
-                ) * (temperature ** 2)
-
-                student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
                 
-                loss = alpha * distillation_loss + (1 - alpha) * student_label_loss
+                loss, student_label_loss, distillation_loss = loss_fn(student_outputs, teacher_outputs, labels)
+
                 running_loss += loss.item()
                 running_distillation_loss += distillation_loss.item()
                 running_cross_entropy_loss += student_label_loss.item()
@@ -241,7 +236,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     optimizer.zero_grad()
                     # accelerator.backward(loss)
                     loss.backward()
-                    lr_scheduler.step()
                     # Gradient clipping
                     torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
@@ -261,6 +255,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     # evaluate the student model
                     evaluate(student_model, gpu=gpu)
                 
+                lr_scheduler.step()
                 progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{len(teacher_train_dataloader)} | Loss: {loss.item()}")
 
             progress_bar.close()
