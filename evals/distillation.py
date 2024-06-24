@@ -41,7 +41,10 @@ pretrained_mamba_tokenizer = "EleutherAI/gpt-neox-20b" # used in benchmarks/benc
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
 def get_teacher_model(path: str):
-    return AutoModelForCausalLM.from_pretrained(path)
+    model = AutoModelForCausalLM.from_pretrained(path)
+    print_model_parameters("Teacher", model)
+    pprint(model.config)
+    return model
 
 
 def get_sanity_student_model(path: str=None):
@@ -188,11 +191,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
 
-    if model_path is not None:
+    if model_path is None:
         loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
         print("Using KL Divergence Loss")
     else:
-        loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1.0, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
+        loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
         print("Using ULD Loss")
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
