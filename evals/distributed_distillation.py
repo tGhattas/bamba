@@ -258,7 +258,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 # evaluate the student model every 4 log intervals
                 if accelerator.is_main_process and batch_idx % log_interval == 0:
                     # evaluate the student model
-                    evaluate(student_model)
+                    evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
                     student_model.train()
                 
                 lr_scheduler.step()
@@ -277,7 +277,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     
     if accelerator.is_main_process:
         # evaluate the teacher model
-        evaluate(teacher_model, is_student=False)
+        evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
 
 
         
