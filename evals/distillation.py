@@ -235,8 +235,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                                                     attention_mask=attention_mask
                                                     )
                 if isinstance(student_model, MambaLMHeadModel):
-                    student_outputs = student_model(input_ids=student_inputs,
-                                                    )
+                    raise NotImplementedError("non HF Mamba model not supported")
+                    # student_outputs = student_model(input_ids=student_inputs,
+                    #                                 )
                 else:
                     student_outputs = student_model(input_ids=student_inputs,
                                                     attention_mask=attention_mask,
@@ -250,10 +251,12 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 
                 
                 loss, student_label_loss, distillation_loss = loss_fn(student_outputs, teacher_outputs, student_labels, teacher_labels)
-
-                running_loss += loss.item()
-                running_distillation_loss += distillation_loss.item()
-                running_cross_entropy_loss += student_label_loss.item()
+                student_label_loss = student_label_loss / accumulation_steps
+                distillation_loss = distillation_loss / accumulation_steps
+                loss = loss / accumulation_steps
+                running_loss += loss.detach().float()
+                running_distillation_loss += distillation_loss.detach().float()
+                running_cross_entropy_loss += student_label_loss.detach().float()
                 if (batch_idx + 1) % accumulation_steps == 0:
                     optimizer.zero_grad()
                     # accelerator.backward(loss)
@@ -263,9 +266,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     optimizer.step()
                     
                 if batch_idx % log_interval == 0:
-                    wandb.log({"epoch": epoch, "runningl_loss": running_loss / log_interval})
-                    wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss / log_interval})
-                    wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss / log_interval})
+                    wandb.log({"epoch": epoch, "runningl_loss": running_loss})
+                    wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss})
+                    wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss})
                     wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
                     running_loss = 0
                     running_distillation_loss = 0
