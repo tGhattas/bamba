@@ -373,7 +373,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
 
-            
+    
     wandb.log({"test_loss": running_loss / counter})
     perplexity = np.exp(running_loss / counter)
     wandb.log({"test_perplexity": perplexity})
