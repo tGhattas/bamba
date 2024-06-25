@@ -399,7 +399,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     wandb.init(
-        project="MAMBA-KD-ULD",
+        project="ACC-MAMBA-KD-ULD",
         config={
                 "limit": str(args.limit),
                 "batch_size": str(args.batch_size),
