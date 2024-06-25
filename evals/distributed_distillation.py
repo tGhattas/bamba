@@ -166,7 +166,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         student_model.load_state_dict(torch.load(model_path))
 
     first_batch = True
-    log_interval = 10
+    log_interval = 100
     
     running_loss = 0
     running_distillation_loss = 0
@@ -243,11 +243,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
                     # log once even though using accelerate
-                    if accelerator.is_main_process:
-                        wandb.log({"epoch": epoch, "running_loss": running_loss.item()})
-                        wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
-                        wandb.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
-                        wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+                    
+                    wandb.log({"epoch": epoch, f"running_loss_{accelerator.process_index}": running_loss.item()})
+                    wandb.log({"epoch": epoch, f"running_distillation_loss_{accelerator.process_index}": running_distillation_loss.item()})
+                    wandb.log({"epoch": epoch, f"running_cross_entropy_loss_{accelerator.process_index}": running_cross_entropy_loss.item()})
+                    wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
 
 
                     running_loss = 0
