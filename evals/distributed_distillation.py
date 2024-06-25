@@ -8,7 +8,7 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import numpy as np
 import argparse
 from memory import MemoryTrace
@@ -41,10 +41,9 @@ teacher_model_path = tiny_model_path #TODO
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
 def get_teacher_model(path: str):
-    model = AutoModelForCausalLM.from_pretrained(path)
-    if accelerator.is_main_process: 
-        print_model_parameters("Teacher", model)
-        pprint(model.config)
+    model = AutoModelForCausalLM.from_pretrained(path) 
+    print_model_parameters("Teacher", model)
+    accelerator.print(model.config)
     return model
 
 
@@ -148,10 +147,10 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
 def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, MambaLMHeadModel]):
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model: {model_name}")
-    print(f"Total Parameters: {total_params}")
-    print(f"Trainable Parameters: {trainable_params}")
-    print(f"Total Memory Footprint: {total_params * 4 / 1024 / 1024} MB")
+    accelerator.print(f"Model: {model_name}")
+    accelerator.print(f"Total Parameters: {total_params}")
+    accelerator.print(f"Trainable Parameters: {trainable_params}")
+    accelerator.print(f"Total Memory Footprint: {total_params * 4 / 1024 / 1024} MB")
 
 def logits_to_tokens(logits):
     """Convert logits to token ids."""
@@ -174,10 +173,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
     if model_path is None:
         loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
-        if accelerator.is_main_process: print("Using KL Divergence Loss")
+        accelerator.print("Using KL Divergence Loss")
     else:
         loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
-        if accelerator.is_main_process: print("Using ULD Loss")
+        accelerator.print("Using ULD Loss")
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
@@ -194,7 +193,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     steps_per_epoch = len(teacher_train_dataloader)
     for epoch in range(epochs):
         with MemoryTrace() as mem_trace:
-            progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps, dynamic_ncols=True)
+            progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps,
+                                dynamic_ncols=True, disable=not accelerator.is_local_main_process)
             for batch_idx, (teacher_batch, student_batch)  in enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit)):
                 teacher_batched_input_ids = teacher_batch['input_ids']
                 student_batched_input_ids = student_batch['input_ids']
@@ -220,12 +220,11 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 else:
                     student_outputs = student_model(input_ids=student_inputs,
                                                     attention_mask=attention_mask,
-                                                    labels=student_labels
-                                                    )
+                                                    labels=student_labels)
 
-                if first_batch and accelerator.is_main_process:
-                    print(f"Student logits shape: {student_outputs.logits.shape}")
-                    print(f"Teacher logits shape: {teacher_outputs.logits.shape}")
+                if first_batch:
+                    accelerator.print(f"Student logits shape: {student_outputs.logits.shape}")
+                    accelerator.print(f"Teacher logits shape: {teacher_outputs.logits.shape}")
                     first_batch = False
                 
                 
@@ -240,13 +239,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     optimizer.zero_grad()
                     accelerator.backward(loss)
                     # Gradient clipping
-                    torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
+                    accelerator.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
                     # log once even though using accelerate
                     
-                    accelerator.log({"epoch": epoch, f"running_loss": running_loss.item()})
-                    accelerator.log({"epoch": epoch, f"running_distillation_loss": running_distillation_loss.item()})
-                    accelerator.log({"epoch": epoch, f"running_cross_entropy_loss": running_cross_entropy_loss.item()})
+                    accelerator.log({"epoch": epoch, "running_loss": running_loss.item()})
+                    accelerator.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
+                    accelerator.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
                     accelerator.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
 
 
