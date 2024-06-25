@@ -266,9 +266,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
                     
-                    wandb.log({"epoch": epoch, "runningl_loss": running_loss.item()})
+                    wandb.log({"epoch": epoch, "running_loss": running_loss.item()})
                     wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
-                    wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss.item()})
+                    wandb.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
                     wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
 
                     running_loss = 0
@@ -361,12 +361,13 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
         with torch.no_grad():
 
-            if isinstance(student_model_eval, (MambaLMHeadModel, MambaForCausalLM)):
+            if isinstance(student_model_eval, MambaLMHeadModel):
                 student_outputs = student_model_eval(input_ids=inputs,
                                             ).logits.to(device)
             else:
                 student_outputs = student_model_eval(input_ids=inputs,
-                                                attention_mask=attention_mask
+                                                attention_mask=attention_mask,
+                                                labels=labels
                                                 ).logits.to(device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
