@@ -190,7 +190,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(teacher_train_dataloader))
 
-    train_dataloader, eval_dataloader, student_model, teacher_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, teacher_model, optimizer)
+    teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer = accelerator.prepare(teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer)
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     steps_per_epoch = len(teacher_train_dataloader)
