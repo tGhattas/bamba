@@ -70,7 +70,7 @@ def get_sanity_student_model(path: str=None):
 
 
 # MAMBA student model
-def get_mamba_model(path: str = None, gpu: int = None):
+def get_mamba_model(path: str = None):
     teacher_model = get_teacher_model(teacher_model_path)
     param = next(teacher_model.parameters())
     teacher_dtype = param.dtype
@@ -159,7 +159,7 @@ def logits_to_tokens(logits):
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
-                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1):
+                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, accumulation_steps: int = 1):
 
 
     if load_chkpt:
@@ -285,7 +285,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
-           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1):   
+           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, accumulation_steps: int = 1):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     
@@ -299,19 +299,19 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path)
         else:
-            student_model = get_mamba_model(path=model_path, gpu=gpu)
+            student_model = get_mamba_model(path=model_path)
     else:
         if not is_mamba:
             student_model = get_sanity_student_model()
         else:
-            student_model = get_mamba_model(gpu=gpu)
+            student_model = get_mamba_model()
     
     student_model.train()
 
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
-                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps)
+                       load_chkpt=load_chkpt, model_path=model_path, accumulation_steps=accumulation_steps)
     # save the student model
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(student_model)
@@ -388,7 +388,6 @@ if __name__ == "__main__":
     parser.add_argument("--load_hf_model", action="store_true")
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--is_mamba", action="store_true", default=False)
-    parser.add_argument("--gpu", type=int, default=None)
     parser.add_argument("--accumulation_steps", type=int, default=1)
 
     args = parser.parse_args()
@@ -409,11 +408,11 @@ if __name__ == "__main__":
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
-          model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps)
+          model_path=args.model_path, is_mamba=args.is_mamba, accumulation_steps=args.accumulation_steps)
 
     # example command line run:
-    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
-    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --load_chkpt --model_path ./checkpoints/student_chkpt_epoch_0_type_mamba_max_length_256.pt --is_mamba --gpu 0
+    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba 
+    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --load_chkpt --model_path ./checkpoints/student_chkpt_epoch_0_type_mamba_max_length_256.pt --is_mamba 
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B 
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
     # python evals/distillation.py --limit 1000000000000 --batch_size 2 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path state-spaces/mamba-790m-hf --accumulation_steps 16 
