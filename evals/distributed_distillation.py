@@ -293,8 +293,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     
     
     teacher_model.eval()
-    if accelerator.is_main_process:
-        print_model_parameters(teacher_model_path, teacher_model)
+
     if load_hf_model:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path)
