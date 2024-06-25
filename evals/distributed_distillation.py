@@ -246,11 +246,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     # Gradient clipping
                     torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
-                    
-                    wandb.log({"epoch": epoch, "running_loss": running_loss.item()})
-                    wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
-                    wandb.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
-                    wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+                    # log once even though using accelerate
+                    if accelerator.is_main_process:
+                        wandb.log({"epoch": epoch, "running_loss": running_loss.item()})
+                        wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
+                        wandb.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
+                        wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+
 
                     running_loss = 0
                     running_distillation_loss = 0
@@ -258,9 +260,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     progress_bar.update()
 
                 # evaluate the student model every 4 log intervals
-                if batch_idx % log_interval == 0:
+                if accelerator.is_main_process and batch_idx % log_interval == 0:
                     # evaluate the student model
-                    evaluate(student_model, gpu=gpu)
+                    evaluate(student_model)
                     student_model.train()
                 
                 lr_scheduler.step()
@@ -277,7 +279,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
     # evaluate the teacher model
-    evaluate(teacher_model, gpu=gpu, is_student=False)
+    evaluate(teacher_model, is_student=False)
 
 
         
@@ -319,8 +321,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 
 # Evaluate the student model
-def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
-    device = f'cuda{f":{gpu}" if gpu else ""}'
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
         student_model = AutoModelForCausalLM.from_pretrained(model_or_path)
