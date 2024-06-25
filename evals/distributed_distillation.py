@@ -256,7 +256,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     progress_bar.update()
 
                 # evaluate the student model every 4 log intervals
-                if accelerator.is_main_process and batch_idx % log_interval == 0:
+                if batch_idx % log_interval == 0:
                     # evaluate the student model
                     evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
                     student_model.train()
@@ -277,7 +277,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     
     if accelerator.is_main_process:
         # evaluate the teacher model
+        accelerator.wait_for_everyone()
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
+        evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
 
 
         
@@ -361,12 +363,12 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         running_loss += student_label_loss.item()
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
-    wandb.log({f"{prefix}test_loss": running_loss / counter})
+    wandb.log({f"proc_{accelerator.process_index}_{prefix}test_loss": running_loss / counter})
     perplexity = np.exp(running_loss / counter)
-    wandb.log({f"{prefix}test_perplexity": perplexity})
-    wandb.log({f"{prefix}test_duration": duration})
+    wandb.log({f"proc_{accelerator.process_index}_{prefix}test_perplexity": perplexity})
+    wandb.log({f"proc_{accelerator.process_index}_{prefix}test_duration": duration})
     prefix = "Student" if is_student else "Teacher"
-    print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
+    print(f"proc_{accelerator.process_index}_{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
     
     
 
