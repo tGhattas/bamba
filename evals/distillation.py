@@ -84,24 +84,6 @@ def get_mamba_model(path: str = None, gpu: int = None):
         config.torch_dtype = teacher_dtype
         mamba_student_model = MambaForCausalLM(config).to(device)
 
-        # config_data = {
-        #     "d_model": 2560,
-        #     "n_layer": teacher_model.config.num_hidden_layers,
-        #     "vocab_size": teacher_model.config.vocab_size,
-        #     "ssm_cfg": {},
-        #     "rms_norm": True,
-        #     "residual_in_fp32": True,
-        #     "fused_add_norm": True,
-        #     "pad_vocab_size_multiple": 8
-        # }
-        # config = MambaConfig(**config_data)
-        
-        # mamba_student_model = MambaLMHeadModel(config,
-        #         initializer_cfg=None,
-        #         device=device,
-        #         dtype=teacher_dtype,
-        #         )
-
     print_model_parameters("MAMBA", mamba_student_model)
     pprint(config)
     return mamba_student_model
@@ -384,7 +366,8 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     perplexity = np.exp(running_loss / counter)
     wandb.log({f"{prefix}test_perplexity": perplexity})
     wandb.log({f"{prefix}test_duration": duration})
-    print(f"Test Loss: {running_loss / counter} | Test Perplexity: {perplexity} | Test Duration: {duration}")
+    prefix = "Student" if is_student else "Teacher"
+    print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
     
     
 
