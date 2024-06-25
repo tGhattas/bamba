@@ -18,7 +18,7 @@ class ULDLoss(nn.Module):
         self.skip_teacher_eos = skip_teacher_eos
         self.ignore_index = ignore_idx
 
-    def forward(self, student_predictions, teacher_predictions, student_targets, teacher_targets, rank=0):
+    def forward(self, student_predictions, teacher_predictions, student_targets, teacher_targets, *args, **kwargs):
         student = student_predictions.logits
         teacher = teacher_predictions.logits
 

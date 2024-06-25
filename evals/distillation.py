@@ -239,7 +239,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                                                     )
                 else:
                     student_outputs = student_model(input_ids=student_inputs,
-                                                    attention_mask=attention_mask
+                                                    attention_mask=attention_mask,
+                                                    labels=student_labels
                                                     )
 
                 if first_batch:
