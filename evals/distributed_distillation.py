@@ -32,7 +32,7 @@ class EmbeddingProjectionLayer(nn.Module):
 
 
 
-accelerator = Accelerator()
+accelerator = Accelerator(log_with="wandb")
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -244,10 +244,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     optimizer.step()
                     # log once even though using accelerate
                     
-                    wandb.log({"epoch": epoch, f"running_loss_{accelerator.process_index}": running_loss.item()})
-                    wandb.log({"epoch": epoch, f"running_distillation_loss_{accelerator.process_index}": running_distillation_loss.item()})
-                    wandb.log({"epoch": epoch, f"running_cross_entropy_loss_{accelerator.process_index}": running_cross_entropy_loss.item()})
-                    wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+                    accelerator.log({"epoch": epoch, f"running_loss": running_loss.item()})
+                    accelerator.log({"epoch": epoch, f"running_distillation_loss": running_distillation_loss.item()})
+                    accelerator.log({"epoch": epoch, f"running_cross_entropy_loss": running_cross_entropy_loss.item()})
+                    accelerator.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
 
 
                     running_loss = 0
@@ -280,6 +280,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         accelerator.wait_for_everyone()
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
+
+    accelerator.end_training()
 
 
         
@@ -363,12 +365,12 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         running_loss += student_label_loss.item()
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
-    wandb.log({f"proc_{accelerator.process_index}_{prefix}test_loss": running_loss / counter})
+    accelerator.log({f"{prefix}test_loss": running_loss / counter})
     perplexity = np.exp(running_loss / counter)
-    wandb.log({f"proc_{accelerator.process_index}_{prefix}test_perplexity": perplexity})
-    wandb.log({f"proc_{accelerator.process_index}_{prefix}test_duration": duration})
+    accelerator.log({f"{prefix}test_perplexity": perplexity})
+    accelerator.log({f"{prefix}test_duration": duration})
     prefix = "Student" if is_student else "Teacher"
-    print(f"proc_{accelerator.process_index}_{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
+    print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
     
     
 
@@ -393,20 +395,20 @@ if __name__ == "__main__":
     parser.add_argument("--accumulation_steps", type=int, default=1)
 
     args = parser.parse_args()
-    if accelerator.is_main_process:
-        wandb.init(
-            project="ACC-MAMBA-KD-ULD",
-            config={
-                    "limit": str(args.limit),
-                    "batch_size": str(args.batch_size),
-                    "max_length": str(args.max_length),
-                    "epochs": str(args.epochs),
-                    "learning_rate": str(args.learning_rate),
-                    "model_path": str(args.model_path),
-                    "is_mamba": str(args.is_mamba),
-                    "accumulation_steps": str(args.accumulation_steps)
-            }
-        )
+    log_config_dict = {
+                "limit": str(args.limit),
+                "batch_size": str(args.batch_size),
+                "max_length": str(args.max_length),
+                "epochs": str(args.epochs),
+                "learning_rate": str(args.learning_rate),
+                "model_path": str(args.model_path),
+                "is_mamba": str(args.is_mamba),
+                "accumulation_steps": str(args.accumulation_steps)
+        }
+    accelerator.init_trackers(
+        project="ACC-MAMBA-KD-ULD",
+        init_kwargs={"wandb": log_config_dict}
+    )
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
