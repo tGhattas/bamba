@@ -283,7 +283,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     student_model.train()
                 
                 lr_scheduler.step()
-                progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{steps_per_epoch} | Loss: {loss.item()} | Distillation Loss: {distillation_loss.item()} | Cross Entropy Loss: {student_label_loss.item()}")
+                progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{steps_per_epoch} | Average Training Loss: {loss.mean().item()}")
 
             progress_bar.close()
             print(f"Epoch: {epoch} completed")
