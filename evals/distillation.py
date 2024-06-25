@@ -16,6 +16,7 @@ from memory import MemoryTrace
 from kl_div_loss import KLDivLoss
 from uld_loss import ULDLoss
 from pprint import pprint
+import time
 # WANDB
 import wandb
 
@@ -35,10 +36,9 @@ class EmbeddingProjectionLayer(nn.Module):
 # accelerator = Accelerator()
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
-sanity_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-teacher_model_path = sanity_model_path #TODO
-pretrained_mamba_tokenizer = "EleutherAI/gpt-neox-20b" # used in benchmarks/benchmark_generation_mamba_simple.py
-# teacher_model_path = pretrained_mamba_tokenizer
+tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+teacher_model_path = tiny_model_path #TODO
+
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
 def get_teacher_model(path: str):
@@ -53,7 +53,7 @@ def get_sanity_student_model(path: str=None):
         model = AutoModelForCausalLM.from_pretrained(path)
     else:
         # reduce the number of parameters in the student model
-        config = AutoConfig.from_pretrained(sanity_model_path)
+        config = AutoConfig.from_pretrained(tiny_model_path)
         teacher_model_config = AutoConfig.from_pretrained(teacher_model_path)
         config.eos_token_id = teacher_model_config.eos_token_id
         config.bos_token_id = teacher_model_config.bos_token_id
@@ -283,16 +283,21 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     student_model.train()
                 
                 lr_scheduler.step()
-                progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{steps_per_epoch} | Average Training Loss: {loss.mean().item()}")
-
+                # print till the 4th after the decimal point
+                progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{steps_per_epoch} | Average Training Loss: {loss.mean().item():.5f}")
+            
             progress_bar.close()
             print(f"Epoch: {epoch} completed")
         
         print(mem_trace)
-                    
+        
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
         torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
+    
+    # evaluate the teacher model
+    evaluate(teacher_model, gpu=gpu, is_student=False)
+
 
         
 
@@ -332,7 +337,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 
 # Evaluate the student model
-def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None):
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
     device = f'cuda{f":{gpu}" if gpu else ""}'
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
@@ -350,6 +355,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     running_loss = 0
     counter = 0
     student_model_eval = student_model.module if isinstance(student_model, DataParallel) else student_model
+    start = time.perf_counter()
     for batch in tqdm(dataloader):
         counter += 1
         batched_input_ids = batch['input_ids'].to(device)
@@ -372,11 +378,13 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
-
-    
-    wandb.log({"test_loss": running_loss / counter})
+    duration = time.perf_counter() - start
+    prefix = "student_" if is_student else "teacher_"
+    wandb.log({f"{prefix}test_loss": running_loss / counter})
     perplexity = np.exp(running_loss / counter)
-    wandb.log({"test_perplexity": perplexity})
+    wandb.log({f"{prefix}test_perplexity": perplexity})
+    wandb.log({f"{prefix}test_duration": duration})
+    print(f"Test Loss: {running_loss / counter} | Test Perplexity: {perplexity} | Test Duration: {duration}")
     
     
 
