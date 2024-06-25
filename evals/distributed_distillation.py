@@ -402,11 +402,13 @@ if __name__ == "__main__":
                 "learning_rate": str(args.learning_rate),
                 "model_path": str(args.model_path),
                 "is_mamba": str(args.is_mamba),
-                "accumulation_steps": str(args.accumulation_steps)
+                "accumulation_steps": str(args.accumulation_steps),
+                
         }
     accelerator.init_trackers(
-        project="ACC-MAMBA-KD-ULD",
-        init_kwargs={"wandb": log_config_dict}
+        project_name="ACC-MAMBA-KD-ULD",
+        config=log_config_dict,
+        init_kwargs={"wandb": {"name": f"distillation-uld-kd-mamba-{args.epochs}-epochs-{args.max_length}-max-length-{args.batch_size}-batch-size-{args.learning_rate}-lr-{args.is_mamba}-is-mamba-{args.accumulation_steps}-accumulation-steps"}}
     )
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
