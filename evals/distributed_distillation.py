@@ -276,10 +276,12 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
-        torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
+        if accelerator.is_main_process:
+            torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
-    # evaluate the teacher model
-    evaluate(teacher_model, is_student=False)
+    if accelerator.is_main_process:
+        # evaluate the teacher model
+        evaluate(teacher_model, is_student=False)
 
 
         
