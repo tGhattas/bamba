@@ -252,12 +252,12 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 
                 
                 loss, student_label_loss, distillation_loss = loss_fn(student_outputs, teacher_outputs, student_labels, teacher_labels)
-                student_label_loss = student_label_loss / accumulation_steps
-                distillation_loss = distillation_loss / accumulation_steps
-                loss = loss / accumulation_steps
-                running_loss += loss.detach().float().mean()
-                running_distillation_loss += distillation_loss.detach().float().mean()
-                running_cross_entropy_loss += student_label_loss.detach().float().mean()
+                student_label_loss = student_label_loss.mean() / accumulation_steps
+                distillation_loss = distillation_loss.mean() / accumulation_steps
+                loss = loss.mean() / accumulation_steps
+                running_loss += loss.detach().float()
+                running_distillation_loss += distillation_loss.detach().float()
+                running_cross_entropy_loss += student_label_loss.detach().float()
                 if (batch_idx + 1) % accumulation_steps == 0:
                     optimizer.zero_grad()
                     # accelerator.backward(loss)
