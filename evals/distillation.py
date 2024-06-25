@@ -186,7 +186,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         student_model.load_state_dict(torch.load(model_path))
 
     first_batch = True
-    log_interval = 200
+    log_interval = 10
     
     running_loss = 0
     running_distillation_loss = 0
@@ -211,9 +211,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     # train_dataloader, eval_dataloader, student_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, optimizer)
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
+    steps_per_epoch = len(teacher_train_dataloader)
     for epoch in range(epochs):
         with MemoryTrace() as mem_trace:
-            progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=len(teacher_train_dataloader), dynamic_ncols=True)
+            progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps, dynamic_ncols=True)
             for batch_idx, (teacher_batch, student_batch)  in enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit)):
                 teacher_batched_input_ids = teacher_batch['input_ids'].to(device)
                 student_batched_input_ids = student_batch['input_ids'].to(device)
@@ -254,9 +255,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 student_label_loss = student_label_loss / accumulation_steps
                 distillation_loss = distillation_loss / accumulation_steps
                 loss = loss / accumulation_steps
-                running_loss += loss.detach().float()
-                running_distillation_loss += distillation_loss.detach().float()
-                running_cross_entropy_loss += student_label_loss.detach().float()
+                running_loss += loss.detach().float().mean()
+                running_distillation_loss += distillation_loss.detach().float().mean()
+                running_cross_entropy_loss += student_label_loss.detach().float().mean()
                 if (batch_idx + 1) % accumulation_steps == 0:
                     optimizer.zero_grad()
                     # accelerator.backward(loss)
@@ -265,24 +266,24 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
                     
-                if batch_idx % log_interval == 0:
-                    wandb.log({"epoch": epoch, "runningl_loss": running_loss})
-                    wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss})
-                    wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss})
+                    wandb.log({"epoch": epoch, "runningl_loss": running_loss.item()})
+                    wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
+                    wandb.log({"epoch": epoch, "runnning_cross_entropy_loss": running_cross_entropy_loss.item()})
                     wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+
                     running_loss = 0
                     running_distillation_loss = 0
                     running_cross_entropy_loss = 0
                     progress_bar.update()
 
                 # evaluate the student model every 4 log intervals
-                if batch_idx % (log_interval * 4) == 0:
+                if batch_idx % log_interval == 0:
                     # evaluate the student model
                     evaluate(student_model, gpu=gpu)
                     student_model.train()
                 
                 lr_scheduler.step()
-                progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{len(teacher_train_dataloader)} | Loss: {loss.item()}")
+                progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{steps_per_epoch} | Loss: {loss.item()} | Distillation Loss: {distillation_loss.item()} | Cross Entropy Loss: {student_label_loss.item()}")
 
             progress_bar.close()
             print(f"Epoch: {epoch} completed")
