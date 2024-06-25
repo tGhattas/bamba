@@ -2,7 +2,6 @@ import os
 from typing import Union
 import torch
 import torch.nn as nn
-from torch.nn import DataParallel
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM
 from accelerate import Accelerator
 from datasets import load_dataset
@@ -43,8 +42,9 @@ teacher_model_path = tiny_model_path #TODO
 
 def get_teacher_model(path: str):
     model = AutoModelForCausalLM.from_pretrained(path)
-    print_model_parameters("Teacher", model)
-    pprint(model.config)
+    if accelerator.is_main_process: 
+        print_model_parameters("Teacher", model)
+        pprint(model.config)
     return model
 
 
@@ -62,9 +62,9 @@ def get_sanity_student_model(path: str=None):
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
     # adapt TinyLlama-1.1B to the teacher model
-
-    print_model_parameters("Sanity Student", model)
-    pprint(model.config)
+    if accelerator.is_main_process: 
+        print_model_parameters("Sanity Student", model)
+        pprint(model.config)
     return model
 
 
@@ -83,9 +83,9 @@ def get_mamba_model(path: str = None, gpu: int = None):
         config.vocab_size = teacher_model.config.vocab_size
         config.torch_dtype = teacher_dtype
         mamba_student_model = MambaForCausalLM(config)
-
-    print_model_parameters("MAMBA", mamba_student_model)
-    pprint(config)
+    if accelerator.is_main_process: 
+        print_model_parameters("MAMBA", mamba_student_model)
+        pprint(config)
     return mamba_student_model
 
 
@@ -176,10 +176,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
     if model_path is None:
         loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
-        print("Using KL Divergence Loss")
+        if accelerator.is_main_process: print("Using KL Divergence Loss")
     else:
         loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
-        print("Using ULD Loss")
+        if accelerator.is_main_process: print("Using ULD Loss")
 
     dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
     if  model_path:
@@ -219,15 +219,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                                                     )
                 if isinstance(student_model, MambaLMHeadModel):
                     raise NotImplementedError("non HF Mamba model not supported")
-                    # student_outputs = student_model(input_ids=student_inputs,
-                    #                                 )
                 else:
                     student_outputs = student_model(input_ids=student_inputs,
                                                     attention_mask=attention_mask,
                                                     labels=student_labels
                                                     )
 
-                if first_batch:
+                if first_batch and accelerator.is_main_process:
                     print(f"Student logits shape: {student_outputs.logits.shape}")
                     print(f"Teacher logits shape: {teacher_outputs.logits.shape}")
                     first_batch = False
@@ -266,7 +264,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     student_model.train()
                 
                 lr_scheduler.step()
-                # print till the 4th after the decimal point
+                
                 progress_bar.set_description(f"Training Epoch: {epoch+1}/{epochs} | Step: {batch_idx}/{steps_per_epoch} | Average Training Loss: {loss.mean().item():.5f}")
             
             progress_bar.close()
@@ -297,7 +295,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     
     
     teacher_model.eval()
-    print_model_parameters(teacher_model_path, teacher_model)
+    if accelerator.is_main_process:
+        print_model_parameters(teacher_model_path, teacher_model)
     if load_hf_model:
         if not is_mamba:
             student_model = AutoModelForCausalLM.from_pretrained(model_path)
@@ -309,7 +308,6 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         else:
             student_model = get_mamba_model(gpu=gpu)
     
-    student_model = DataParallel(student_model)# if not is_mamba else student_model
     student_model.train()
 
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
