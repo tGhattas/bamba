@@ -272,7 +272,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             progress_bar.close()
             print(f"Epoch: {epoch} completed")
         
-        print(mem_trace)
+        print(f"process index: {accelerator.process_index}", mem_trace)
         
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
@@ -399,20 +399,20 @@ if __name__ == "__main__":
     parser.add_argument("--accumulation_steps", type=int, default=1)
 
     args = parser.parse_args()
-
-    wandb.init(
-        project="ACC-MAMBA-KD-ULD",
-        config={
-                "limit": str(args.limit),
-                "batch_size": str(args.batch_size),
-                "max_length": str(args.max_length),
-                "epochs": str(args.epochs),
-                "learning_rate": str(args.learning_rate),
-                "model_path": str(args.model_path),
-                "is_mamba": str(args.is_mamba),
-                "accumulation_steps": str(args.accumulation_steps)
-        }
-       )
+    if accelerator.is_main_process:
+        wandb.init(
+            project="ACC-MAMBA-KD-ULD",
+            config={
+                    "limit": str(args.limit),
+                    "batch_size": str(args.batch_size),
+                    "max_length": str(args.max_length),
+                    "epochs": str(args.epochs),
+                    "learning_rate": str(args.learning_rate),
+                    "model_path": str(args.model_path),
+                    "is_mamba": str(args.is_mamba),
+                    "accumulation_steps": str(args.accumulation_steps)
+            }
+        )
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
