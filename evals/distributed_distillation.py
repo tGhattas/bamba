@@ -256,7 +256,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     progress_bar.update()
 
                 # evaluate the student model every 4 log intervals
-                if batch_idx % log_interval == 0:
+                if accelerator.is_main_process and batch_idx % log_interval == 0:
                     # evaluate the student model
                     evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
                     student_model.train()
@@ -275,9 +275,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         if accelerator.is_main_process:
             torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
-    
-    # evaluate the teacher model
-    evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
+    if accelerator.is_main_process:
+        # evaluate the teacher model
+        evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
 
 
         
@@ -320,6 +320,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 # Evaluate the student model
 def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
+    accelerator.wait_for_everyone()
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
         student_model = AutoModelForCausalLM.from_pretrained(model_or_path)
