@@ -36,7 +36,7 @@ accelerator = Accelerator(log_with="wandb")
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-teacher_model_path = tiny_model_path #TODO
+# teacher_model_path = tiny_model_path #TODO
 
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
@@ -408,7 +408,7 @@ if __name__ == "__main__":
     accelerator.init_trackers(
         project_name="ACC-MAMBA-KD-ULD",
         config=log_config_dict,
-        init_kwargs={"wandb": {"name": f"distillation-uld-kd-mamba-{args.epochs}-epochs-{args.max_length}-max-length-{args.batch_size}-batch-size-{args.learning_rate}-lr-{args.is_mamba}-is-mamba-{args.accumulation_steps}-accumulation-steps"}}
+        init_kwargs={"wandb": {"name": f"distillation-uld-kd-mamba-{args.epochs}-epochs-{args.max_length}-max-length-{args.batch_size}-batch-size-{args.learning_rate}-lr-{args.is_mamba}-is-mamba-{args.accumulation_steps}-accumulation-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
     )
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
