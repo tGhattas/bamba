@@ -426,11 +426,12 @@ if __name__ == "__main__":
     parser.add_argument("--use_modified_tokenizer", action="store_true", default=False)
     parser.add_argument("--use_teacher_tokenizer", action="store_true", default=False)
     parser.add_argument("--teacher_model_path", type=str, default=teacher_model_path)
+    parser.add_argument("--wandb_name", type=str, default='')
 
     args = parser.parse_args()
-
+    name_prefix = args.wandb_name + "_" if args.wandb_name else ""
     wandb.init(
-        project="MAMBA-KD-ULD",
+        project="MMB-SE-KD-ULD",
         config={
                 "limit": str(args.limit),
                 "batch_size": str(args.batch_size),
@@ -440,7 +441,8 @@ if __name__ == "__main__":
                 "model_path": str(args.model_path),
                 "is_mamba": str(args.is_mamba),
                 "accumulation_steps": str(args.accumulation_steps)
-        }
+        },
+        name=f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}_lr_{args.learning_rate}_is_mamba_{args.is_mamba}_max_length_{args.max_length}"
        )
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
