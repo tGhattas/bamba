@@ -194,12 +194,12 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         tokenizer_factory = ModifiedMambaTokenizerFactory(student_tokenizer=student_tokenizer, teacher_tokenizer=teacher_tokenizer)
         student_tokenizer = tokenizer_factory.get_modified_tokenizer()
-        student_model.resize_token_embeddings(len(student_tokenizer))
+        (student_model if isinstance(student_model, DataParallel) else student_model.module).resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
     elif use_teacher_tokenizer:
         student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         student_tokenizer.pad_token = student_tokenizer.eos_token
-        student_model.resize_token_embeddings(len(student_tokenizer))
+        (student_model if isinstance(student_model, DataParallel) else student_model.module).resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
     else:
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path)
