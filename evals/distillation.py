@@ -196,17 +196,19 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         student_tokenizer = tokenizer_factory.get_modified_tokenizer()
         (student_model if not isinstance(student_model, DataParallel) else student_model.module).resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        print(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
+        print(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
     elif use_teacher_tokenizer:
         student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         student_tokenizer.pad_token = student_tokenizer.eos_token
         (student_model if not isinstance(student_model, DataParallel) else student_model.module).resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        print("Using Teacher Tokenizer for student model")
     else:
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path)
 
     # log vocab size of the student model and the teacher model
-    print(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
-    print(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
+    
 
     if  model_path or modified_tokenizer or use_teacher_tokenizer:
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
