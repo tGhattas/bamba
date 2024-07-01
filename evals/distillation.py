@@ -9,7 +9,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCo
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
+try:
+    from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+except ImportError:
+    class MambaLMHeadModel: pass
 from tqdm import tqdm
 import numpy as np
 import argparse

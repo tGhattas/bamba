@@ -7,7 +7,10 @@ from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
+try:
+    from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+except ImportError:
+    class MambaLMHeadModel: pass
 from tqdm.auto import tqdm
 import numpy as np
 import argparse
@@ -287,7 +290,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
         if accelerator.is_main_process:
-            torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
+            torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaForCausalLM) else 'transformer'}_max_length_{max_length}.pt")
     
     if accelerator.is_main_process:
         accelerator.print("POST TRAINING EVALS")
@@ -338,7 +341,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 
 # Evaluate the student model
-def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
+def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaForCausalLM], eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
     accelerator.wait_for_everyone()
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
