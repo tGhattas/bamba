@@ -201,6 +201,14 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     steps_per_epoch = len(teacher_train_dataloader)
+
+    if accelerator.is_main_process:
+        accelerator.print("PRE TRAINING EVALS")
+        # evaluate the teacher model
+        accelerator.wait_for_everyone()
+        evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
+        evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
+
     for epoch in range(epochs):
         with MemoryTrace() as mem_trace:
             progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps,
@@ -282,7 +290,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
     if accelerator.is_main_process:
-        # evaluate the teacher model
+        accelerator.print("POST TRAINING EVALS")
         accelerator.wait_for_everyone()
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
