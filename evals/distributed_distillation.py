@@ -1,5 +1,5 @@
 import os
-from typing import Union
+from typing import Optional, Union
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM
@@ -15,6 +15,7 @@ from memory import MemoryTrace
 from kl_div_loss import KLDivLoss
 from uld_loss import ULDLoss
 from pprint import pprint
+from modified_tokenizer import ModifiedMambaTokenizerFactory
 import time
 
 import os
@@ -60,13 +61,15 @@ def get_sanity_student_model(path: str=None):
 
 
 # MAMBA student model
-def get_mamba_model(path: str = None):
+def get_mamba_model(path: str = None, set_teacher_embedding_size: bool = False):
     teacher_model = get_teacher_model(teacher_model_path)
     param = next(teacher_model.parameters())
     teacher_dtype = param.dtype
     if path:
         mamba_student_model = MambaForCausalLM.from_pretrained(path)
         config = mamba_student_model.config
+        if set_teacher_embedding_size:
+            config.vocab_size = teacher_model.config.vocab_size
     else:
         config = AutoConfig.from_pretrained(hf_mamba_path)
         config.vocab_size = teacher_model.config.vocab_size
@@ -89,13 +92,13 @@ HF_PADDING_IGNORE = -100
 
 
 
-def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer_path: str = None):
+def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None):
 
     dataset_path = "wikitext-2-v1"
 
-    if student_tokenizer_path:
+    if student_tokenizer is not None:
         dataset = load_dataset("wikitext", dataset_path)
-        student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer_path, use_fast=True)
+        student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer, use_fast=True) if isinstance(student_tokenizer, str) else student_tokenizer
         student_tokenizer.pad_token = student_tokenizer.eos_token
         def student_tokenize_function(examples):
             return student_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
@@ -129,7 +132,7 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
     # Create the data loader
     teacher_data_loader = DataLoader(teacher_tokenized_datasets[partition], batch_size=batch_size, collate_fn=teacher_data_collator)
 
-    if student_tokenizer_path:
+    if student_tokenizer:
         return teacher_data_loader, student_data_loader, teacher_tokenizer.pad_token_id
     
     return teacher_data_loader, teacher_tokenizer.pad_token_id
@@ -149,7 +152,7 @@ def logits_to_tokens(logits):
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
-                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, accumulation_steps: int = 1):
+                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, accumulation_steps: int = 1, modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None):
 
 
     if load_chkpt:
@@ -162,15 +165,31 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
 
-    if model_path is None:
+    if teacher_vocab_size == student_vocab_size:
         loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
         accelerator.print("Using KL Divergence Loss")
     else:
         loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
         accelerator.print("Using ULD Loss")
-
-    dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer_path=model_path)
-    if  model_path:
+    assert not (modified_tokenizer and use_teacher_tokenizer), "Both modified_tokenizer and use_teacher_tokenizer cannot be True at the same time"
+    if modified_tokenizer:
+        student_tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+        teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+        tokenizer_factory = ModifiedMambaTokenizerFactory(student_tokenizer=student_tokenizer, teacher_tokenizer=teacher_tokenizer)
+        student_tokenizer = tokenizer_factory.get_modified_tokenizer()
+        student_model.resize_token_embeddings(len(student_tokenizer))
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        print(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
+        print(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
+    elif use_teacher_tokenizer:
+        student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+        student_tokenizer.pad_token = student_tokenizer.eos_token
+        student_model.resize_token_embeddings(len(student_tokenizer))
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        print("Using Teacher Tokenizer for student model")
+    else:
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path)
+    if  model_path or modified_tokenizer or use_teacher_tokenizer:
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
     else:
         teacher_train_dataloader, pad_token_id = dataloader
@@ -232,13 +251,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     # Gradient clipping
                     accelerator.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
-                    # log once even though using accelerate
-                    
                     accelerator.log({"epoch": epoch, "running_loss": running_loss.item()})
                     accelerator.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
                     accelerator.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
                     accelerator.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
-
 
                     running_loss = 0
                     running_distillation_loss = 0
@@ -279,7 +295,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
-           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None, is_mamba: bool=False, accumulation_steps: int = 1):   
+           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
+             is_mamba: bool=False, accumulation_steps: int = 1, use_modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     
@@ -304,7 +321,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
-                       load_chkpt=load_chkpt, model_path=model_path, accumulation_steps=accumulation_steps)
+                       load_chkpt=load_chkpt, model_path=model_path, accumulation_steps=accumulation_steps,
+                       modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path)
     # save the student model
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(student_model)
@@ -383,8 +401,15 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--is_mamba", action="store_true", default=False)
     parser.add_argument("--accumulation_steps", type=int, default=1)
-
+    parser.add_argument("--gpu", type=int, default=None)
+    parser.add_argument("--accumulation_steps", type=int, default=1)
+    parser.add_argument("--use_modified_tokenizer", action="store_true", default=False)
+    parser.add_argument("--use_teacher_tokenizer", action="store_true", default=False)
+    parser.add_argument("--teacher_model_path", type=str, default=teacher_model_path)
+    parser.add_argument("--wandb_name", type=str, default='')
     args = parser.parse_args()
+    name_prefix = args.wandb_name + "_" if args.wandb_name else ""
+
     log_config_dict = {
                 "limit": str(args.limit),
                 "batch_size": str(args.batch_size),
@@ -399,12 +424,12 @@ if __name__ == "__main__":
     accelerator.init_trackers(
         project_name="ACC-MAMBA-KD-ULD",
         config=log_config_dict,
-        init_kwargs={"wandb": {"name": f"distillation-uld-kd-mamba-{args.epochs}-epochs-{args.max_length}-max-length-{args.batch_size}-batch-size-{args.learning_rate}-lr-{args.is_mamba}-is-mamba-{args.accumulation_steps}-accumulation-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
+        init_kwargs={"wandb": {"name": f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-max-length-{args.batch_size}-batch-size-{args.learning_rate}-lr-{args.is_mamba}-is-mamba-{args.accumulation_steps}-accumulation-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
     )
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
-          model_path=args.model_path, is_mamba=args.is_mamba, accumulation_steps=args.accumulation_steps)
+          model_path=args.model_path, is_mamba=args.is_mamba, accumulation_steps=args.accumulation_steps, use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer, teacher_model_path=teacher_model_path)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba 

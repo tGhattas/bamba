@@ -17,6 +17,7 @@ from memory import MemoryTrace
 from kl_div_loss import KLDivLoss
 from uld_loss import ULDLoss
 from pprint import pprint
+from modified_tokenizer import ModifiedMambaTokenizerFactory
 import time
 # WANDB
 import wandb
@@ -25,7 +26,6 @@ import wandb
 
 
 
-# accelerator = Accelerator()
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -59,17 +59,6 @@ def get_sanity_student_model(path: str=None):
     pprint(model.config)
     return model
 
-class ModifiedMambaTokenizerFactory:
-    def __init__(self, student_tokenizer: AutoTokenizer, teacher_tokenizer: AutoTokenizer):
-        self.student_tokenizer = student_tokenizer
-        self.teacher_tokenizer = teacher_tokenizer
-        teacher_vocab = set(teacher_tokenizer.get_vocab())
-        student_vocab = set(student_tokenizer.get_vocab())
-        student_tokenizer.add_tokens(list(teacher_vocab - student_vocab)[:len(teacher_vocab) - len(student_vocab)]) #
-    
-
-    def get_modified_tokenizer(self):
-        return self.student_tokenizer
 
 
 # MAMBA student model
@@ -215,12 +204,8 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     else:
         teacher_train_dataloader, pad_token_id = dataloader
 
-
-
-    # eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(teacher_train_dataloader))
 
-    # train_dataloader, eval_dataloader, student_model, optimizer = accelerator.prepare(train_dataloader, eval_dataloader, student_model, optimizer)
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     steps_per_epoch = len(teacher_train_dataloader)
@@ -249,13 +234,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                                                     )
                 if isinstance(student_model, MambaLMHeadModel):
                     raise NotImplementedError("non HF Mamba model not supported")
-                    # student_outputs = student_model(input_ids=student_inputs,
-                    #                                 )
                 else:
                     student_outputs = student_model(input_ids=student_inputs,
                                                     attention_mask=attention_mask,
-                                                    labels=student_labels
-                                                    )
+                                                    labels=student_labels)
 
                 if first_batch:
                     print(f"Student logits shape: {student_outputs.logits.shape}")
@@ -272,12 +254,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 running_cross_entropy_loss += student_label_loss.detach().float()
                 if (batch_idx + 1) % accumulation_steps == 0:
                     optimizer.zero_grad()
-                    # accelerator.backward(loss)
                     loss.backward()
                     # Gradient clipping
                     torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
-                    
                     wandb.log({"epoch": epoch, "running_loss": running_loss.item()})
                     wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
                     wandb.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
@@ -410,9 +390,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
 
 # command line run for training with parsing arguments
 if __name__ == "__main__":
-    
-    # train(limit=1000000000, batch_size=8, max_length=256, epochs=5, learning_rate=1e-4, is_mamba=True, gpu=0)
-    
+        
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=1000)
