@@ -209,7 +209,6 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     if accelerator.is_main_process:
         accelerator.print("PRE TRAINING EVALS")
         # evaluate the teacher model
-        accelerator.wait_for_everyone()
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
 
