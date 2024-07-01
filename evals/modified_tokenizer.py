@@ -1,3 +1,5 @@
+from transformers import AutoTokenizer
+
 class ModifiedMambaTokenizerFactory:
     def __init__(self, student_tokenizer: AutoTokenizer, teacher_tokenizer: AutoTokenizer):
         self.student_tokenizer = student_tokenizer
