@@ -174,14 +174,14 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         tokenizer_factory = ModifiedMambaTokenizerFactory(student_tokenizer=student_tokenizer, teacher_tokenizer=teacher_tokenizer)
         student_tokenizer = tokenizer_factory.get_modified_tokenizer()
-        student_model.resize_token_embeddings(len(teacher_tokenizer))
+        student_model.resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
         print(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
         print(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
     elif use_teacher_tokenizer:
         student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         student_tokenizer.pad_token = student_tokenizer.eos_token
-        student_model.resize_token_embeddings(len(teacher_tokenizer))
+        student_model.resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
         print("Using Teacher Tokenizer for student model")
     else:
@@ -204,12 +204,13 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(teacher_train_dataloader))
 
-    teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer = accelerator.prepare(teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer)
+    if accelerator:
+        teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer = accelerator.prepare(teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer)
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     steps_per_epoch = len(teacher_train_dataloader)
 
-    if accelerator.is_main_process:
+    if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
         accelerator.print("PRE TRAINING EVALS")
         # evaluate the teacher model
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
@@ -295,7 +296,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         if accelerator.is_main_process:
             torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaForCausalLM) else 'transformer'}_max_length_{max_length}.pt")
     
-    if accelerator.is_main_process:
+    if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
         accelerator.print("POST TRAINING EVALS")
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
