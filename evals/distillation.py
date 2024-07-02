@@ -65,7 +65,7 @@ def get_sanity_student_model(path: str=None):
 
 # MAMBA student model
 def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_size: bool = False):
-    device = f'cuda{f":{gpu}" if gpu else ""}'
+    device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     teacher_model = get_teacher_model(teacher_model_path)
     param = next(teacher_model.parameters())
     teacher_dtype = param.dtype
@@ -97,12 +97,13 @@ HF_PADDING_IGNORE = -100
 
 
 
-def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None):
+def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None, minimize_dataset: bool = False):
 
     dataset_path = "wikitext-2-v1"
 
     if student_tokenizer is not None:
         dataset = load_dataset("wikitext", dataset_path)
+       
         student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer, use_fast=True) if isinstance(student_tokenizer, str) else student_tokenizer
         student_tokenizer.pad_token = student_tokenizer.eos_token
         def student_tokenize_function(examples):
@@ -114,7 +115,7 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
             mlm=False,  # Set to True if using Masked Language Modeling
             pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
         )
-        student_data_loader = DataLoader(student_tokenized_datasets[partition], batch_size=batch_size, collate_fn=student_data_collator)
+        student_data_loader = DataLoader(student_tokenized_datasets[partition] if not minimize_dataset else student_tokenized_datasets[partition].select(range(10)), batch_size=batch_size, collate_fn=student_data_collator)
     
     dataset = load_dataset("wikitext", dataset_path)
     # Load the teacher tokenizer
@@ -135,7 +136,7 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
     )
     
     # Create the data loader
-    teacher_data_loader = DataLoader(teacher_tokenized_datasets[partition], batch_size=batch_size, collate_fn=teacher_data_collator)
+    teacher_data_loader = DataLoader(teacher_tokenized_datasets[partition] if not minimize_dataset else teacher_tokenized_datasets[partition].select(range(10)), batch_size=batch_size, collate_fn=teacher_data_collator)
 
     if student_tokenizer:
         return teacher_data_loader, student_data_loader, teacher_tokenizer.pad_token_id
@@ -158,8 +159,9 @@ def logits_to_tokens(logits):
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
-                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1, modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None):
-    device = f'cuda{f":{gpu}" if gpu else ""}'
+                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1,
+                           modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None, minimize_dataset: bool = False):
+    device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     printF = pprint if accelerator is None else accelerator.print
 
     if load_chkpt:
@@ -182,17 +184,17 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         tokenizer_factory = ModifiedMambaTokenizerFactory(student_tokenizer=student_tokenizer, teacher_tokenizer=teacher_tokenizer)
         student_tokenizer = tokenizer_factory.get_modified_tokenizer()
         student_underlying_model.resize_token_embeddings(len(student_tokenizer))
-        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer, minimize_dataset=minimize_dataset)
         printF(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
         printF(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
     elif use_teacher_tokenizer:
         student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         student_tokenizer.pad_token = student_tokenizer.eos_token
         student_underlying_model.resize_token_embeddings(len(student_tokenizer))
-        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer, minimize_dataset=minimize_dataset)
         printF("Using Teacher Tokenizer for student model")
     else:
-        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path)
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path, minimize_dataset=minimize_dataset)
 
     teacher_vocab_size = teacher_underlying_model.config.vocab_size
     student_vocab_size = student_underlying_model.config.vocab_size
@@ -209,7 +211,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     else:
         teacher_train_dataloader, pad_token_id = dataloader
 
-    eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
+    eval_dataloader, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset)
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(teacher_train_dataloader))
 
     if accelerator is not None:
@@ -319,10 +321,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
            learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
-             is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path):   
+             is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path, minimize_dataset: bool = False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
-    device = f'cuda{f":{gpu}" if gpu else ""}'
+    device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     teacher_model = get_teacher_model(teacher_model_path)
     if accelerator is None:
         teacher_model = DataParallel(teacher_model)
@@ -341,14 +343,14 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         else:
             student_model = get_mamba_model(gpu=gpu)
     if accelerator is None:
-        student_model = DataParallel(student_model)# if not is_mamba else student_model
+        student_model = DataParallel(student_model)
     student_model.train()
 
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
-                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path)
+                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=minimize_dataset)
     # save the student model
     if accelerator is None:
         (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
@@ -360,7 +362,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
 # Evaluate the student model
 def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
-    device = f'cuda{f":{gpu}" if gpu else ""}'
+    device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     if accelerator is not None:
         accelerator.wait_for_everyone()
     # evaluate the student model using the test dataset
@@ -412,7 +414,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
     
 
-def smart_to(model, device="cuda"):
+def smart_to(model, device="cuda" if torch.cuda.is_available() else "cpu"):
     if accelerator is None:
         return model.to(device)
     return model
@@ -448,6 +450,7 @@ if __name__ == "__main__":
     parser.add_argument("--teacher_model_path", type=str, default=teacher_model_path)
     parser.add_argument("--wandb_name", type=str, default='')
     parser.add_argument("--use_accelerate", action="store_true", default=False)
+    parser.add_argument("--minimize_dataset", action="store_true", default=False)
 
     args = parser.parse_args()
     
@@ -484,12 +487,13 @@ if __name__ == "__main__":
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
-          model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps, use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer, teacher_model_path=teacher_model_path)
+          model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
+          use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --load_chkpt --model_path ./checkpoints/student_chkpt_epoch_0_type_mamba_max_length_256.pt --is_mamba --gpu 0
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B 
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
-    # python evals/distillation.py --limit 1000000000000 --batch_size 2 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path state-spaces/mamba-790m-hf --accumulation_steps 16 
+    # python evals/distillation.py --limit 100 --batch_size 2 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path state-spaces/mamba-370m-hf --accumulation_steps 16 --is_mamba
 

@@ -15,9 +15,10 @@ def byte2gb(x):
 class MemoryTrace:
     def __enter__(self):
         gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.reset_max_memory_allocated() 
-        self.begin = byte2gb(torch.cuda.memory_allocated())
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_max_memory_allocated() 
+            self.begin = byte2gb(torch.cuda.memory_allocated())
         self.process = psutil.Process()
         self.cpu_begin = byte2gb(self.cpu_mem_used())
         self.peak_monitoring = True
@@ -39,10 +40,10 @@ class MemoryTrace:
 
     def __str__(self):
         return f"""
-        Max CUDA memory allocated was {self.peak} GB
-        Max CUDA memory reserved was {self.max_reserved} GB
-        Peak active CUDA memory was {self.peak_active_gb} GB
-        Cuda Malloc retires : {self.cuda_malloc_retires}
+        Max CUDA memory allocated was {self.peak if hasattr(self, 'peak') else 0} GB
+        Max CUDA memory reserved was {self.max_reserved if hasattr(self, 'max_reserved') else 0} GB
+        Peak active CUDA memory was {self.peak_active_gb if hasattr(self, 'peak_active_gb') else 0} GB
+        Cuda Malloc retires : {self.cuda_malloc_retires if hasattr(self, 'cuda_malloc_retires') else 0}
         CPU Total Peak Memory consumed during the train (max): {self.cpu_peaked + self.cpu_begin} GB
         """
 
@@ -50,17 +51,18 @@ class MemoryTrace:
         self.peak_monitoring = False
 
         gc.collect()
-        torch.cuda.empty_cache()
-        self.end = byte2gb(torch.cuda.memory_allocated())
-        self.peak = byte2gb(torch.cuda.max_memory_allocated())
-        cuda_info = torch.cuda.memory_stats()
-        self.peak_active_gb = byte2gb(cuda_info["active_bytes.all.peak"])
-        self.cuda_malloc_retires = cuda_info.get("num_alloc_retries", 0)
-        self.peak_active_gb = byte2gb(cuda_info["active_bytes.all.peak"])
-        self.m_cuda_ooms = cuda_info.get("num_ooms", 0)
-        self.used = byte2gb(self.end - self.begin)
-        self.peaked = byte2gb(self.peak - self.begin)
-        self.max_reserved = byte2gb(torch.cuda.max_memory_reserved())
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            self.end = byte2gb(torch.cuda.memory_allocated())
+            self.peak = byte2gb(torch.cuda.max_memory_allocated())
+            cuda_info = torch.cuda.memory_stats()
+            self.peak_active_gb = byte2gb(cuda_info["active_bytes.all.peak"])
+            self.cuda_malloc_retires = cuda_info.get("num_alloc_retries", 0)
+            self.peak_active_gb = byte2gb(cuda_info["active_bytes.all.peak"])
+            self.m_cuda_ooms = cuda_info.get("num_ooms", 0)
+            self.used = byte2gb(self.end - self.begin)
+            self.peaked = byte2gb(self.peak - self.begin)
+            self.max_reserved = byte2gb(torch.cuda.max_memory_reserved())
 
         self.cpu_end = self.cpu_mem_used()
         self.cpu_used = byte2gb(self.cpu_end - self.cpu_begin)
