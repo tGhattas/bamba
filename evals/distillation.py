@@ -419,7 +419,7 @@ if __name__ == "__main__":
     
 
     unique_run_id = str(random.randint(0, 1000000)) + str(int(time.time()))
-    name_prefix = f"{args.wandb_name}_{unique_run_id}_"
+    name_prefix = f"{unique_run_id}_{args.wandb_name}_"
     wandb.init(
         project="MMB-SE-KD-ULD",
         config={
