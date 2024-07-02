@@ -430,7 +430,7 @@ def init_logger(logger_):
 
 # command line run for training with parsing arguments
 if __name__ == "__main__":
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -467,6 +467,7 @@ if __name__ == "__main__":
         }
     if args.use_accelerate:
         init_accelerate()
+        accelerator.print("-----Accelerate Initialized-----")
         accelerator.init_trackers(
             project_name="ACC-MAMBA-KD-ULD",
             config=log_config_dict,
