@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 from torch.nn import DataParallel
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM
-
-# from accelerate import Accelerator
+from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -14,7 +13,7 @@ try:
     from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 except ImportError:
     class MambaLMHeadModel: pass
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import numpy as np
 import argparse
 from memory import MemoryTrace
@@ -23,13 +22,12 @@ from uld_loss import ULDLoss
 from pprint import pprint
 from modified_tokenizer import ModifiedMambaTokenizerFactory
 import time
-# WANDB
+
 import wandb
 
-    
 
-
-
+logger = None
+accelerator = None
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -40,7 +38,7 @@ teacher_model_path = tiny_model_path
 def get_teacher_model(path: str):
     model = AutoModelForCausalLM.from_pretrained(path)
     print_model_parameters("Teacher", model)
-    pprint(model.config)
+    pprint(model.config) if accelerator is None else accelerator.print(model.config)
     return model
 
 
@@ -58,9 +56,9 @@ def get_sanity_student_model(path: str=None):
         model = AutoModelForCausalLM.from_config(config)
     # print memory foorprint and number of parameters
     # adapt TinyLlama-1.1B to the teacher model
-
-    print_model_parameters("Sanity Student", model)
-    pprint(model.config)
+    if (accelerator and accelerator.is_main_process) or accelerator is None:
+        print_model_parameters("Sanity Student", model)
+        pprint(model.config)
     return model
 
 
@@ -72,7 +70,7 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
     param = next(teacher_model.parameters())
     teacher_dtype = param.dtype
     if path:
-        mamba_student_model = MambaForCausalLM.from_pretrained(path).to(device)
+        mamba_student_model = smart_to(MambaForCausalLM.from_pretrained(path), device)
         config = mamba_student_model.config
         if set_teacher_embedding_size:
             config.vocab_size = teacher_model.config.vocab_size
@@ -81,10 +79,10 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
         config = AutoConfig.from_pretrained(hf_mamba_path)
         config.vocab_size = teacher_model.config.vocab_size
         config.torch_dtype = teacher_dtype
-        mamba_student_model = MambaForCausalLM(config).to(device)
-
-    print_model_parameters("MAMBA", mamba_student_model)
-    pprint(config)
+        mamba_student_model = smart_to(MambaForCausalLM(config), device)
+    if (accelerator and accelerator.is_main_process) or accelerator is None:
+        print_model_parameters("MAMBA", mamba_student_model)
+        pprint(config)
     return mamba_student_model
 
 
@@ -148,10 +146,11 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
 def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, MambaLMHeadModel]):
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model: {model_name}")
-    print(f"Total Parameters: {total_params}")
-    print(f"Trainable Parameters: {trainable_params}")
-    print(f"Total Memory Footprint: {total_params * 4 / 1024 / 1024} MB")
+    printF = pprint if accelerator is None else accelerator.print
+    printF(f"Model: {model_name}")
+    printF(f"Total Parameters: {total_params}")
+    printF(f"Trainable Parameters: {trainable_params}")
+    printF(f"Total Memory Footprint: {total_params * 4 / 1024 / 1024} MB")
 
 def logits_to_tokens(logits):
     """Convert logits to token ids."""
@@ -161,7 +160,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                        batch_size: int, max_length: int,
                          limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1, modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None):
     device = f'cuda{f":{gpu}" if gpu else ""}'
-
+    printF = pprint if accelerator is None else accelerator.print
 
     if load_chkpt:
         student_model.load_state_dict(torch.load(model_path))
@@ -184,14 +183,14 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         student_tokenizer = tokenizer_factory.get_modified_tokenizer()
         student_underlying_model.resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
-        print(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
-        print(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
+        printF(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
+        printF(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
     elif use_teacher_tokenizer:
         student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         student_tokenizer.pad_token = student_tokenizer.eos_token
         student_underlying_model.resize_token_embeddings(len(student_tokenizer))
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
-        print("Using Teacher Tokenizer for student model")
+        printF("Using Teacher Tokenizer for student model")
     else:
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path)
 
@@ -199,10 +198,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     student_vocab_size = student_underlying_model.config.vocab_size
     if teacher_vocab_size == student_vocab_size:
         loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha, using_acc=False)
-        print("Using KL Divergence Loss")
+        printF("Using KL Divergence Loss")
     else:
         loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
-        print("Using ULD Loss")
+        printF("Using ULD Loss")
     
 
     if  model_path or modified_tokenizer or use_teacher_tokenizer:
@@ -210,29 +209,41 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     else:
         teacher_train_dataloader, pad_token_id = dataloader
 
+    eval_dataloader, _ = init_dataloader(batch_size, max_length, "test")
     lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(teacher_train_dataloader))
+
+    if accelerator is not None:
+        teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer = accelerator.prepare(teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer)
 
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     steps_per_epoch = len(teacher_train_dataloader)
+
+    if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
+        accelerator.print("PRE TRAINING EVALS")
+        # evaluate the teacher model
+        evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
+        evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
+
     for epoch in range(epochs):
         with MemoryTrace() as mem_trace:
-            progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps, dynamic_ncols=True)
+            progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps,
+                                 dynamic_ncols=True, disable=(accelerator is not None and not accelerator.is_local_main_process))
             for batch_idx, (teacher_batch, student_batch)  in enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit)):
-                teacher_batched_input_ids = teacher_batch['input_ids'].to(device)
-                student_batched_input_ids = student_batch['input_ids'].to(device)
+                teacher_batched_input_ids = smart_to(teacher_batch['input_ids'], device)
+                student_batched_input_ids = smart_to(student_batch['input_ids'], device)
                 
-                teacher_inputs = teacher_batched_input_ids[:, :-1].contiguous().to(device)
-                student_inputs = student_batched_input_ids[:, :-1].contiguous().to(device)
+                teacher_inputs = smart_to(teacher_batched_input_ids[:, :-1].contiguous(), device)
+                student_inputs = smart_to(student_batched_input_ids[:, :-1].contiguous(), device)
 
-                student_labels = student_batched_input_ids[:, 1:].contiguous().to(device)
+                student_labels = smart_to(student_batched_input_ids[:, 1:].contiguous(), device)
                 student_labels[student_labels == pad_token_id] = HF_PADDING_IGNORE
 
-                teacher_labels = teacher_batched_input_ids[:, 1:].contiguous().to(device)
+                teacher_labels = smart_to(teacher_batched_input_ids[:, 1:].contiguous(), device)
                 teacher_labels[teacher_labels == pad_token_id] = HF_PADDING_IGNORE
 
-                batched_attention_mask = teacher_batch['attention_mask'].to(device)
-                attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+                batched_attention_mask = smart_to(teacher_batch['attention_mask'], device)
+                attention_mask = smart_to(batched_attention_mask[:, :-1].contiguous(), device)
                 
                 with torch.no_grad():
                     teacher_outputs = teacher_model(input_ids=teacher_inputs,
@@ -246,8 +257,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                                                     labels=student_labels)
 
                 if first_batch:
-                    print(f"Student logits shape: {student_outputs.logits.shape}")
-                    print(f"Teacher logits shape: {teacher_outputs.logits.shape}")
+                    printF = pprint if accelerator is None else accelerator.print
+                    printF(f"Student logits shape: {student_outputs.logits.shape}")
+                    printF(f"Teacher logits shape: {teacher_outputs.logits.shape}")
                     first_batch = False
                 
                 
@@ -260,14 +272,17 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 running_cross_entropy_loss += student_label_loss.detach().float()
                 if (batch_idx + 1) % accumulation_steps == 0:
                     optimizer.zero_grad()
-                    loss.backward()
+                    if accelerator is not None:
+                        accelerator.backward(loss)
+                    else:
+                        loss.backward()
                     # Gradient clipping
-                    torch.nn.utils.clip_grad_norm_(student_model.parameters(), max_norm=0.5)
+                    (torch.nn.utils if accelerator is None else  accelerator).clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
-                    wandb.log({"epoch": epoch, "running_loss": running_loss.item()})
-                    wandb.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
-                    wandb.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
-                    wandb.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+                    logger.log({"epoch": epoch, "running_loss": running_loss.item()})
+                    logger.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
+                    logger.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
+                    logger.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
 
                     running_loss = 0
                     running_distillation_loss = 0
@@ -277,7 +292,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                 # evaluate the student model every 4 log intervals
                 if batch_idx % log_interval == 0:
                     # evaluate the student model
-                    evaluate(student_model, gpu=gpu)
+                    evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
                     student_model.train()
                 
                 lr_scheduler.step()
@@ -287,17 +302,18 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             progress_bar.close()
             print(f"Epoch: {epoch} completed")
         
-        print(mem_trace)
+        print(mem_trace) if accelerator is None else print(f"process index: {accelerator.process_index}", mem_trace)
         
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
-        torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
+        if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
+            torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
-    # evaluate the teacher model
-    evaluate(teacher_model, gpu=gpu, is_student=False)
-
-
-        
+    
+    if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
+        accelerator.print("POST TRAINING EVALS")
+        evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id, gpu=gpu)
+        evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
 
 # Training Loop
@@ -308,23 +324,24 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}'
     teacher_model = get_teacher_model(teacher_model_path)
-    teacher_model = DataParallel(teacher_model)
-    teacher_model.to(device)
+    if accelerator is None:
+        teacher_model = DataParallel(teacher_model)
+    smart_to(teacher_model, device)
     
     teacher_model.eval()
     print_model_parameters(teacher_model_path, teacher_model)
     if load_hf_model:
         if not is_mamba:
-            student_model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+            student_model = smart_to(AutoModelForCausalLM.from_pretrained(model_path), device)
         else:
             student_model = get_mamba_model(path=model_path, gpu=gpu)
     else:
         if not is_mamba:
-            student_model = get_sanity_student_model().to(device)
+            student_model = smart_to(get_sanity_student_model(), device)
         else:
             student_model = get_mamba_model(gpu=gpu)
-    
-    student_model = DataParallel(student_model)# if not is_mamba else student_model
+    if accelerator is None:
+        student_model = DataParallel(student_model)# if not is_mamba else student_model
     student_model.train()
 
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
@@ -333,15 +350,22 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
                           modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path)
     # save the student model
-    (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
+    if accelerator is None:
+        (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
+    else:
+        accelerator.wait_for_everyone()
+        unwrapped_model = accelerator.unwrap_model(student_model)
+        unwrapped_model.save_pretrained(f"distr_full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
 
 
 # Evaluate the student model
 def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, MambaForCausalLM], gpu: int = None, eval_dataloader: DataLoader = None, pad_token_id: int = None, is_student: bool = True):
     device = f'cuda{f":{gpu}" if gpu else ""}'
+    if accelerator is not None:
+        accelerator.wait_for_everyone()
     # evaluate the student model using the test dataset
     if isinstance(model_or_path, str):
-        student_model = AutoModelForCausalLM.from_pretrained(model_or_path).to(device)
+        student_model = smart_to(AutoModelForCausalLM.from_pretrained(model_or_path), device)
     else:
         student_model = model_or_path
     
@@ -358,46 +382,55 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     start = time.perf_counter()
     for batch in tqdm(dataloader):
         counter += 1
-        batched_input_ids = batch['input_ids'].to(device)
-        inputs = batched_input_ids[:, :-1].contiguous().to(device)
-        labels = batched_input_ids[:, 1:].contiguous().to(device)
+        batched_input_ids = smart_to(batch['input_ids'], device)
+        inputs = smart_to(batched_input_ids[:, :-1].contiguous(), device)
+        labels = smart_to(batched_input_ids[:, 1:].contiguous(), device)
         labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
-        batched_attention_mask = batch['attention_mask'].to(device)
-        attention_mask = batched_attention_mask[:, :-1].contiguous().to(device)
+        batched_attention_mask = smart_to(batch['attention_mask'], device)
+        attention_mask = smart_to(batched_attention_mask[:, :-1].contiguous(), device)
         with torch.no_grad():
 
             if isinstance(student_model_eval, MambaLMHeadModel):
-                student_outputs = student_model_eval(input_ids=inputs,
-                                            ).logits.to(device)
+                student_outputs = smart_to(student_model_eval(input_ids=inputs,
+                                            ).logits, device)
             else:
-                student_outputs = student_model_eval(input_ids=inputs,
+                student_outputs = smart_to(student_model_eval(input_ids=inputs,
                                                 attention_mask=attention_mask,
                                                 labels=labels
-                                                ).logits.to(device)
+                                                ).logits, device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
-    wandb.log({f"{prefix}test_loss": running_loss / counter})
+    logger.log({f"{prefix}test_loss": running_loss / counter})
     perplexity = np.exp(running_loss / counter)
-    wandb.log({f"{prefix}test_perplexity": perplexity})
-    wandb.log({f"{prefix}test_duration": duration})
+    logger.log({f"{prefix}test_perplexity": perplexity})
+    logger.log({f"{prefix}test_duration": duration})
     prefix = "Student" if is_student else "Teacher"
     print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
     
-    
 
-    
-    
+def smart_to(model, device="cuda"):
+    if accelerator is None:
+        return model.to(device)
+    return model
 
-        
+
+def init_accelerate():
+    global accelerator
+    accelerator = Accelerator()
+
+
+def init_logger(logger_):
+    global logger
+    logger = logger_
+
 
 # command line run for training with parsing arguments
 if __name__ == "__main__":
-        
-
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -414,15 +447,14 @@ if __name__ == "__main__":
     parser.add_argument("--use_teacher_tokenizer", action="store_true", default=False)
     parser.add_argument("--teacher_model_path", type=str, default=teacher_model_path)
     parser.add_argument("--wandb_name", type=str, default='')
+    parser.add_argument("--use_accelerate", action="store_true", default=False)
 
     args = parser.parse_args()
     
 
     unique_run_id = str(random.randint(0, 1000000)) + str(int(time.time()))
     name_prefix = f"{unique_run_id}_{args.wandb_name}_"
-    wandb.init(
-        project="MMB-SE-KD-ULD",
-        config={
+    log_config_dict = {
                 "limit": str(args.limit),
                 "batch_size": str(args.batch_size),
                 "max_length": str(args.max_length),
@@ -430,10 +462,24 @@ if __name__ == "__main__":
                 "learning_rate": str(args.learning_rate),
                 "model_path": str(args.model_path),
                 "is_mamba": str(args.is_mamba),
-                "accumulation_steps": str(args.accumulation_steps)
-        },
-        name=f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}_lr_{args.learning_rate}_is_mamba_{args.is_mamba}_max_length_{args.max_length}"
-       )
+                "accumulation_steps": str(args.accumulation_steps),
+                
+        }
+    if args.use_accelerate:
+        init_accelerate()
+        accelerator.init_trackers(
+            project_name="ACC-MAMBA-KD-ULD",
+            config=log_config_dict,
+            init_kwargs={"wandb": {"name": f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-max-length-{args.batch_size}-batch-size-{args.learning_rate}-lr-{args.is_mamba}-is-mamba-{args.accumulation_steps}-accumulation-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
+        )
+        init_logger(accelerator)
+    else:
+        wandb.init(
+            project="MMB-SE-KD-ULD",
+            config=log_config_dict,
+            name=f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}_lr_{args.learning_rate}_is_mamba_{args.is_mamba}_max_length_{args.max_length}"
+        )
+        init_logger(wandb)
 
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
