@@ -220,7 +220,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     steps_per_epoch = len(teacher_train_dataloader)
 
     if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
-        accelerator.print("PRE TRAINING EVALS")
+        printF("PRE TRAINING EVALS")
         # evaluate the teacher model
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id)
@@ -311,7 +311,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     
     
     if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
-        accelerator.print("POST TRAINING EVALS")
+        printF("POST TRAINING EVALS")
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id, gpu=gpu)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
