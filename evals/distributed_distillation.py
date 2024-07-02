@@ -170,7 +170,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     teacher_vocab_size = teacher_model.config.vocab_size
     student_vocab_size = student_model.config.vocab_size
     if teacher_vocab_size == student_vocab_size:
-        loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha)
+        loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha, using_acc=True)
         accelerator.print("Using KL Divergence Loss")
     else:
         loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
