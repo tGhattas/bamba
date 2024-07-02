@@ -167,6 +167,26 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     running_loss = 0
     running_distillation_loss = 0
     running_cross_entropy_loss = 0
+
+    assert not (modified_tokenizer and use_teacher_tokenizer), "Both modified_tokenizer and use_teacher_tokenizer cannot be True at the same time"
+    if modified_tokenizer:
+        student_tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+        teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+        tokenizer_factory = ModifiedMambaTokenizerFactory(student_tokenizer=student_tokenizer, teacher_tokenizer=teacher_tokenizer)
+        student_tokenizer = tokenizer_factory.get_modified_tokenizer()
+        student_model.resize_token_embeddings(len(teacher_tokenizer))
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        print(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
+        print(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
+    elif use_teacher_tokenizer:
+        student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
+        student_tokenizer.pad_token = student_tokenizer.eos_token
+        student_model.resize_token_embeddings(len(teacher_tokenizer))
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
+        print("Using Teacher Tokenizer for student model")
+    else:
+        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path) 
+
     teacher_vocab_size = teacher_model.config.vocab_size
     student_vocab_size = student_model.config.vocab_size
     if teacher_vocab_size == student_vocab_size:
@@ -175,24 +195,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     else:
         loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
         accelerator.print("Using ULD Loss")
-    assert not (modified_tokenizer and use_teacher_tokenizer), "Both modified_tokenizer and use_teacher_tokenizer cannot be True at the same time"
-    if modified_tokenizer:
-        student_tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
-        teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
-        tokenizer_factory = ModifiedMambaTokenizerFactory(student_tokenizer=student_tokenizer, teacher_tokenizer=teacher_tokenizer)
-        student_tokenizer = tokenizer_factory.get_modified_tokenizer()
-        student_model.resize_token_embeddings(len(student_tokenizer))
-        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
-        print(f"Student Model Vocab Size: {student_tokenizer.vocab_size}")
-        print(f"Teacher Model Vocab Size: {teacher_tokenizer.vocab_size}")
-    elif use_teacher_tokenizer:
-        student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
-        student_tokenizer.pad_token = student_tokenizer.eos_token
-        student_model.resize_token_embeddings(len(student_tokenizer))
-        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer)
-        print("Using Teacher Tokenizer for student model")
-    else:
-        dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=model_path)
+
     if  model_path or modified_tokenizer or use_teacher_tokenizer:
         teacher_train_dataloader, student_train_dataloader, pad_token_id = dataloader
     else:
