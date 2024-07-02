@@ -1,4 +1,5 @@
 import os
+import random
 from typing import Optional, Union
 import torch
 import torch.nn as nn
@@ -415,7 +416,10 @@ if __name__ == "__main__":
     parser.add_argument("--wandb_name", type=str, default='')
 
     args = parser.parse_args()
-    name_prefix = args.wandb_name + "_" if args.wandb_name else ""
+    
+
+    unique_run_id = str(random.randint(0, 1000000)) + str(int(time.time()))
+    name_prefix = f"{args.wandb_name}_{unique_run_id}_"
     wandb.init(
         project="MMB-SE-KD-ULD",
         config={
