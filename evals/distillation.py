@@ -388,10 +388,10 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         batched_input_ids = smart_to(batch['input_ids'], device)
         inputs = smart_to(batched_input_ids[:, :-1].contiguous(), device)
         labels = smart_to(batched_input_ids[:, 1:].contiguous(), device)
-        if (labels.all() == pad_token_id).item():
+        if (labels.view(-1).all() == pad_token_id).item():
             # skip the batch if all the labels are pad tokens
             continue
-        
+
         labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
         batched_attention_mask = smart_to(batch['attention_mask'], device)
