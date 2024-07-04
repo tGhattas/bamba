@@ -412,6 +412,8 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
             print(f"labels: {labels}")
             print(f"student_outputs.view(-1, student_outputs.size(-1)): {student_outputs.view(-1, student_outputs.size(-1))}")
             print(f"labels.view(-1): {labels.view(-1)}")
+            print(f"inputs: {inputs}")
+            print(f"origin of labels: {batched_input_ids}")
             raise ValueError("NaN loss detected")
             
     duration = time.perf_counter() - start
