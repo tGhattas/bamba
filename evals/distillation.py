@@ -404,7 +404,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
-        print(f"student outputs: {student_outputs}")
+        print(f"running_loss:{running_loss}")
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
     logger.log({f"{prefix}test_loss": running_loss / counter})
@@ -413,7 +413,6 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     logger.log({f"{prefix}test_duration": duration})
     prefix = "Student" if is_student else "Teacher"
     print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
-    print()
     
 
 def smart_to(model, device="cuda" if torch.cuda.is_available() else "mps"):
