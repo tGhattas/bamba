@@ -9,6 +9,7 @@ from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
+from numpy import isnan
 try:
     from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 except ImportError:
@@ -405,6 +406,9 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
         print(f"running_loss:{running_loss}")
+        if isnan(running_loss):
+            print()
+            
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
     logger.log({f"{prefix}test_loss": running_loss / counter})
