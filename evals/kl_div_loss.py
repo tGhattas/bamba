@@ -22,32 +22,12 @@ class KLDivLoss(nn.Module):
             student_outputs = student_outputs.to(device)
             teacher_outputs = teacher_outputs.to(device)
         assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
-        # Check for NaNs in inputs
-        if torch.isnan(student_outputs).any() or torch.isnan(teacher_outputs).any():
-            raise ValueError("NaN values found in student or teacher outputs before softmax")
-
-        # Compute the distillation loss
+        # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
         distillation_loss = nn.KLDivLoss(reduction="batchmean")(
             torch.log_softmax(student_outputs / self.temperature, dim=-1),
             torch.softmax(teacher_outputs / self.temperature, dim=-1),
         ) * (self.temperature ** 2)
 
-        # Check for NaNs in distillation loss
-        if torch.isnan(distillation_loss).any():
-            raise ValueError("NaN values found in distillation loss")
-
-        student_label_loss = nn.CrossEntropyLoss(ignore_index=self.ignore_idx)(
-            student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1)
-        )
-
-        # Check for NaNs in student label loss
-        if torch.isnan(student_label_loss).any():
-            raise ValueError("NaN values found in student label loss")
-
+        student_label_loss = nn.CrossEntropyLoss(ignore_index=self.ignore_idx)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         loss = self.distillation_loss_weight * distillation_loss + (1 - self.distillation_loss_weight) * student_label_loss
-
-        # Check for NaNs in final loss
-        if torch.isnan(loss).any():
-            raise ValueError("NaN values found in final loss")
-
         return loss, student_label_loss, distillation_loss
