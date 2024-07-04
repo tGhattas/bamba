@@ -380,14 +380,18 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     
     # evalua using the test dataset
     running_loss = 0
-    counter = 0
+    counter = 1
     # student_model_eval = student_model.module if isinstance(student_model, DataParallel) else student_model
     start = time.perf_counter()
     for batch in tqdm(dataloader):
-        counter += 1
+        
         batched_input_ids = smart_to(batch['input_ids'], device)
         inputs = smart_to(batched_input_ids[:, :-1].contiguous(), device)
         labels = smart_to(batched_input_ids[:, 1:].contiguous(), device)
+        if (labels.all() == pad_token_id).item():
+            # skip the batch if all the labels are pad tokens
+            continue
+        
         labels[labels == pad_token_id] = HF_PADDING_IGNORE
 
         batched_attention_mask = smart_to(batch['attention_mask'], device)
@@ -404,17 +408,17 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
                                                 ).logits, device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
+
         running_loss += student_label_loss.item()
         print(f"running_loss:{running_loss}")
         if isnan(running_loss):
             print("NaN loss detected")
             print(f"student_outputs: {student_outputs}")
-            print(f"labels: {labels}")
-            print(f"student_outputs.view(-1, student_outputs.size(-1)): {student_outputs.view(-1, student_outputs.size(-1))}")
             print(f"labels.view(-1): {labels.view(-1)}")
             print(f"inputs: {inputs}")
             print(f"origin of labels: {batched_input_ids}")
             raise ValueError("NaN loss detected")
+        counter += 1
             
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
