@@ -414,7 +414,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
     
 
-def smart_to(model, device="cuda" if torch.cuda.is_available() else "cpu"):
+def smart_to(model, device="cuda" if torch.cuda.is_available() else "mps"):
     if accelerator is None:
         return model.to(device)
     return model
@@ -455,7 +455,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
 
-    unique_run_id = str(random.randint(0, 1000000)) + str(int(time.time()))
+    unique_run_id = str(random.randint(0, 1000)) + str(int(time.time()))
     name_prefix = f"{unique_run_id}_{args.wandb_name}_"
     log_config_dict = {
                 "limit": str(args.limit),
@@ -488,7 +488,8 @@ if __name__ == "__main__":
     train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
           model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
-          use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset)
+          use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
+          teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
