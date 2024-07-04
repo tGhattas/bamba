@@ -380,7 +380,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     # evalua using the test dataset
     running_loss = 0
     counter = 0
-    student_model_eval = student_model.module if isinstance(student_model, DataParallel) else student_model
+    # student_model_eval = student_model.module if isinstance(student_model, DataParallel) else student_model
     start = time.perf_counter()
     for batch in tqdm(dataloader):
         counter += 1
@@ -393,17 +393,18 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         attention_mask = smart_to(batched_attention_mask[:, :-1].contiguous(), device)
         with torch.no_grad():
 
-            if isinstance(student_model_eval, MambaLMHeadModel):
-                student_outputs = smart_to(student_model_eval(input_ids=inputs,
+            if isinstance(student_model, MambaLMHeadModel):
+                student_outputs = smart_to(student_model(input_ids=inputs,
                                             ).logits, device)
             else:
-                student_outputs = smart_to(student_model_eval(input_ids=inputs,
+                student_outputs = smart_to(student_model(input_ids=inputs,
                                                 attention_mask=attention_mask,
                                                 labels=labels
                                                 ).logits, device)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         running_loss += student_label_loss.item()
+        print(f"student outputs: {student_outputs}")
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
     logger.log({f"{prefix}test_loss": running_loss / counter})
@@ -412,6 +413,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     logger.log({f"{prefix}test_duration": duration})
     prefix = "Student" if is_student else "Teacher"
     print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
+    print()
     
 
 def smart_to(model, device="cuda" if torch.cuda.is_available() else "mps"):
