@@ -407,7 +407,12 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         running_loss += student_label_loss.item()
         print(f"running_loss:{running_loss}")
         if isnan(running_loss):
-            print()
+            print("NaN loss detected")
+            print(f"student_outputs: {student_outputs}")
+            print(f"labels: {labels}")
+            print(f"student_outputs.view(-1, student_outputs.size(-1)): {student_outputs.view(-1, student_outputs.size(-1))}")
+            print(f"labels.view(-1): {labels.view(-1)}")
+            raise ValueError("NaN loss detected")
             
     duration = time.perf_counter() - start
     prefix = "student_" if is_student else "teacher_"
