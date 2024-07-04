@@ -381,6 +381,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     # evalua using the test dataset
     running_loss = 0
     counter = 1
+    ignored_count = 0
     # student_model_eval = student_model.module if isinstance(student_model, DataParallel) else student_model
     start = time.perf_counter()
     for batch in tqdm(dataloader):
@@ -390,6 +391,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         labels = smart_to(batched_input_ids[:, 1:].contiguous(), device)
         # skip the batch if all the labels are pad tokens
         if (labels == pad_token_id).all():
+            ignored_count += 1
             continue
 
         labels[labels == pad_token_id] = HF_PADDING_IGNORE
@@ -410,7 +412,6 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
         student_label_loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
 
         running_loss += student_label_loss.item()
-        print(f"running_loss:{running_loss}")
         if isnan(running_loss):
             print("NaN loss detected")
             print(f"student_outputs: {student_outputs}")
@@ -428,6 +429,7 @@ def evaluate(model_or_path: Union[str, AutoModelForCausalLM, MambaLMHeadModel, M
     logger.log({f"{prefix}test_duration": duration})
     prefix = "Student" if is_student else "Teacher"
     print(f"{prefix} Test Loss: {(running_loss / counter):.5f} | Test Perplexity: {perplexity:.5f} | Duration: {duration:.5f} seconds")
+    print(f"Ignored {ignored_count} batches")
     
 
 def smart_to(model, device="cuda" if torch.cuda.is_available() else "mps"):
