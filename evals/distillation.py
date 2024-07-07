@@ -163,7 +163,7 @@ def logits_to_tokens(logits):
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
                          limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1,
-                           modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None, minimize_dataset: bool = False):
+                           modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None, minimize_dataset: bool = False, unique_id: str = ''):
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     printF = pprint if accelerator is None else accelerator.print
 
@@ -318,7 +318,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         if os.path.exists("./checkpoints") == False:
             os.mkdir("./checkpoints")
         if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
-            torch.save(student_model.state_dict(), f"./checkpoints/student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
+            torch.save(student_model.state_dict(), f"./checkpoints/u{unique_id}_student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
     
     if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
@@ -330,7 +330,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
            learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
-             is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path, minimize_dataset: bool = False):   
+             is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path, minimize_dataset: bool = False, unique_id: str = ''):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -359,14 +359,14 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
-                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=minimize_dataset)
+                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=minimize_dataset, unique_id)
     # save the student model
     if accelerator is None:
-        (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
+        (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"u{unique_id}full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
     else:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(student_model)
-        unwrapped_model.save_pretrained(f"distr_full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
+        unwrapped_model.save_pretrained(f"u{unique_id}distr_full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
 
 
 # Evaluate the student model
@@ -515,7 +515,7 @@ if __name__ == "__main__":
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
           model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
           use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
-          teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset)
+          teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
