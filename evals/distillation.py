@@ -359,7 +359,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
-                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=minimize_dataset, unique_id)
+                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=minimize_dataset, unique_id=unique_id)
     # save the student model
     if accelerator is None:
         (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"u{unique_id}full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
