@@ -25,7 +25,7 @@ class KLDivLoss(nn.Module):
         # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
         if self.distillation_loss_weight == 0:
             loss = nn.CrossEntropyLoss(ignore_index=self.ignore_idx)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
-            return loss, loss, torch.tensor(0)
+            return loss, loss, torch.tensor(0, dtype=loss.dtype, device=loss.device)
         
         distillation_loss = nn.KLDivLoss(reduction="batchmean")(
             torch.log_softmax(student_outputs / self.temperature, dim=-1),
