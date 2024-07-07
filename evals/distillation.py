@@ -118,12 +118,14 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
         )
         student_data_loader = DataLoader(student_tokenized_datasets[partition] if not minimize_dataset else student_tokenized_datasets[partition].select(range(10)), batch_size=batch_size, collate_fn=student_data_collator)
     
+    
     dataset = load_dataset("wikitext", dataset_path)
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
     # add padding token to the tokenizer
     teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
-
+    if student_tokenizer:
+        student_tokenizer.pad_token = teacher_tokenizer.pad_token
     # Tokenize the dataset
     def teacher_tokenize_function(examples):
         return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
@@ -232,6 +234,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         with MemoryTrace() as mem_trace:
             progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps,
                                  dynamic_ncols=True, disable=(accelerator is not None and not accelerator.is_local_main_process))
+            ignored_count = 0
             for batch_idx, (teacher_batch, student_batch)  in enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit)):
                 teacher_batched_input_ids = smart_to(teacher_batch['input_ids'], device)
                 student_batched_input_ids = smart_to(student_batch['input_ids'], device)
@@ -265,6 +268,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     printF(f"Teacher logits shape: {teacher_outputs.logits.shape}")
                     first_batch = False
                 
+                
+                if (teacher_labels == pad_token_id).all() or (student_labels == pad_token_id).all():
+                    ignored_count += 1
+                    continue
                 
                 loss, student_label_loss, distillation_loss = loss_fn(student_outputs, teacher_outputs, student_labels, teacher_labels)
                 student_label_loss = student_label_loss.mean() / accumulation_steps
@@ -304,6 +311,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             
             progress_bar.close()
             print(f"Epoch: {epoch} completed")
+            print(f"Ignored {ignored_count} batches")
         
         print(mem_trace) if accelerator is None else print(f"process index: {accelerator.process_index}", mem_trace)
         
