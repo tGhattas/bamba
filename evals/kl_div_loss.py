@@ -23,6 +23,10 @@ class KLDivLoss(nn.Module):
             teacher_outputs = teacher_outputs.to(device)
         assert student_outputs.shape == teacher_outputs.shape, f"Student logits shape: {student_outputs.shape} != Teacher logits shape: {teacher_outputs.shape}"
         # Compute the distillation loss based on https://pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
+        if self.distillation_loss_weight == 0:
+            loss = nn.CrossEntropyLoss(ignore_index=self.ignore_idx)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
+            return loss, loss, 0.0
+        
         distillation_loss = nn.KLDivLoss(reduction="batchmean")(
             torch.log_softmax(student_outputs / self.temperature, dim=-1),
             torch.softmax(teacher_outputs / self.temperature, dim=-1),
