@@ -32,8 +32,9 @@ accelerator = None
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-pythia_model_path = "EleutherAI/pythia-1b"
-teacher_model_path = pythia_model_path 
+pythia_1B_model_path = "EleutherAI/pythia-1b"
+pythia_28B_model_path = "EleutherAI/pythia-2.8b"
+teacher_model_path = pythia_28B_model_path 
 
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
