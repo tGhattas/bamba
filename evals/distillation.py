@@ -91,12 +91,7 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
 
 # Step 3: Knowledge Distillation
 
-temperature = 2.0  # Temperature for softmax computation
-alpha = 0.5  # The weight of the distillation loss
-
-
 HF_PADDING_IGNORE = -100
-
 
 
 def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None, minimize_dataset: bool = False):
@@ -164,7 +159,7 @@ def logits_to_tokens(logits):
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
                        batch_size: int, max_length: int,
                          limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1,
-                           modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None, minimize_dataset: bool = False, unique_id: str = ''):
+                           modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None, minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0):
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     printF = pprint if accelerator is None else accelerator.print
 
@@ -331,7 +326,9 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
            learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
-             is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path, minimize_dataset: bool = False, unique_id: str = ''):   
+             is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
+               use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
+                 minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -360,7 +357,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     
     distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
-                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path, minimize_dataset=minimize_dataset, unique_id=unique_id)
+                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path,
+                            minimize_dataset=minimize_dataset, unique_id=unique_id, alpha=alpha, temperature=temperature)
     # save the student model
     if accelerator is None:
         (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"u{unique_id}full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
@@ -478,6 +476,8 @@ if __name__ == "__main__":
     parser.add_argument("--wandb_name", type=str, default='')
     parser.add_argument("--use_accelerate", action="store_true", default=False)
     parser.add_argument("--minimize_dataset", action="store_true", default=False)
+    parser.add_argument("--alpha", type=float, default=0.5)
+    parser.add_argument("--temperature", type=float, default=2.0)
 
     args = parser.parse_args()
     
@@ -501,14 +501,14 @@ if __name__ == "__main__":
         accelerator.init_trackers(
             project_name="ACC-MAMBA-KD-ULD",
             config=log_config_dict,
-            init_kwargs={"wandb": {"name": f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-max-length-{args.batch_size}-batch-size-{args.learning_rate}-lr-{args.is_mamba}-is-mamba-{args.accumulation_steps}-accumulation-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
+            init_kwargs={"wandb": {"name": f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
         )
         init_logger(accelerator)
     else:
         wandb.init(
             project="MMB-SE-KD-ULD",
             config=log_config_dict,
-            name=f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}_lr_{args.learning_rate}_is_mamba_{args.is_mamba}_max_length_{args.max_length}"
+            name=f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"
         )
         init_logger(wandb)
 
@@ -516,7 +516,7 @@ if __name__ == "__main__":
           learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
           model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
           use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
-          teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix)
+          teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha, temperature=args.temperature)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
