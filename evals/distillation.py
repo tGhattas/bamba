@@ -216,7 +216,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         teacher_train_dataloader, pad_token_id = dataloader
 
     eval_dataloader, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset)
-    lr_scheduler = get_scheduler("linear", optimizer, num_warmup_steps=10, num_training_steps=epochs * len(teacher_train_dataloader))
+    lr_scheduler = get_scheduler("cosine", optimizer, num_warmup_steps=int(0.05 * epochs * len(teacher_train_dataloader)), num_training_steps=epochs * len(teacher_train_dataloader))
 
     if accelerator is not None:
         teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer = accelerator.prepare(teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer)
