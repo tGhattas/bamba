@@ -200,10 +200,14 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     student_vocab_size = student_underlying_model.config.vocab_size
     if teacher_vocab_size == student_vocab_size:
         loss_fn = KLDivLoss(reduction='mean', temperature=temperature, ignore_idx=HF_PADDING_IGNORE, distillation_loss_weight=alpha, using_acc=False)
+        printF("-"*50)
         printF("Using KL Divergence Loss")
+        printF("-"*50)
     else:
         loss_fn = ULDLoss(distillation_weight=alpha, crossentropy_weight=1-alpha, ignore_idx=HF_PADDING_IGNORE, teacher_temperature=temperature, student_temperature=temperature, skip_student_eos=True, skip_teacher_eos=True)
+        printF("-"*50)
         printF("Using ULD Loss")
+        printF("-"*50)
     
 
     if  model_path or modified_tokenizer or use_teacher_tokenizer:
