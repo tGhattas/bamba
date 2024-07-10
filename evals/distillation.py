@@ -190,7 +190,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     elif use_teacher_tokenizer:
         student_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
         student_tokenizer.pad_token = student_tokenizer.eos_token
-        student_underlying_model.resize_token_embeddings(len(student_tokenizer))
+        student_underlying_model.resize_token_embeddings(teacher_underlying_model.config.vocab_size)
         dataloader = init_dataloader(batch_size, max_length, "train", student_tokenizer=student_tokenizer, minimize_dataset=minimize_dataset)
         printF("Using Teacher Tokenizer for student model")
     else:
