@@ -484,7 +484,7 @@ if __name__ == "__main__":
     parser.add_argument("--minimize_dataset", action="store_true", default=False)
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=2.0)
-    parser.add_argument("--evaulate", action="store_true", default=False)
+    parser.add_argument("--evaluate", action="store_true", default=False)
 
     args = parser.parse_args()
     
