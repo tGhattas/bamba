@@ -483,6 +483,7 @@ if __name__ == "__main__":
     parser.add_argument("--minimize_dataset", action="store_true", default=False)
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=2.0)
+    parser.add_argument("--evaulate", action="store_true", default=False)
 
     args = parser.parse_args()
     
@@ -517,11 +518,15 @@ if __name__ == "__main__":
         )
         init_logger(wandb)
 
-    train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
-          learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
-          model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
-          use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
-          teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha, temperature=args.temperature)
+    if args.evaluate:
+        # run bench
+        pass
+    else:
+        train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
+            learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
+            model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
+            use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
+            teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha, temperature=args.temperature)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0

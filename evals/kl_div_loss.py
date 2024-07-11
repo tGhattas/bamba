@@ -33,6 +33,6 @@ class KLDivLoss(nn.Module):
         ) * (self.temperature ** 2)
 
         student_label_loss = nn.CrossEntropyLoss(ignore_index=self.ignore_idx)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
-        loss = self.distillation_loss_weight * distillation_loss + (1 - self.distillation_loss_weight) * student_label_loss
+        loss = self.distillation_loss_weight * distillation_loss / 100 + (1 - self.distillation_loss_weight) * student_label_loss
             
         return loss, student_label_loss, distillation_loss
