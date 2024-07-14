@@ -35,7 +35,7 @@ tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 pythia_1B_model_path = "EleutherAI/pythia-1b"
 pythia_28B_model_path = "EleutherAI/pythia-2.8b"
 pythia_69B_model_path = "EleutherAI/pythia-6.9b"
-teacher_model_path = pythia_1B_model_path 
+teacher_model_path = pythia_69B_model_path 
 
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
@@ -226,7 +226,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
     steps_per_epoch = len(teacher_train_dataloader)
 
-    if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
+    if (accelerator is not None) or accelerator is None:
         printF("PRE TRAINING EVALS")
         # evaluate the teacher model
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id)
@@ -323,7 +323,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
             torch.save(student_model.state_dict(), f"./checkpoints/u{unique_id}_student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
     
-    if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
+    if (accelerator is not None) or accelerator is None:
         printF("POST TRAINING EVALS")
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id, gpu=gpu)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
