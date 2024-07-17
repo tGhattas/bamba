@@ -220,7 +220,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     lr_scheduler = get_scheduler("cosine", optimizer, num_warmup_steps=int(0.05 * epochs * len(teacher_train_dataloader)), num_training_steps=epochs * len(teacher_train_dataloader))
 
     if accelerator is not None:
-        teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer = accelerator.prepare(teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer)
+        teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer, lr_scheduler = accelerator.prepare(teacher_train_dataloader, student_train_dataloader, eval_dataloader, student_model, teacher_model, optimizer, lr_scheduler)
 
 
     other_dataloader = teacher_train_dataloader if not model_path else student_train_dataloader
@@ -454,6 +454,7 @@ def smart_to(model, device="cuda" if torch.cuda.is_available() else "mps"):
 def init_accelerate():
     global accelerator
     accelerator = Accelerator()
+    print(f"Using device: {accelerator.device}")
 
 
 def init_logger(logger_):
@@ -535,4 +536,6 @@ if __name__ == "__main__":
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B 
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
     # python evals/distillation.py --limit 100 --batch_size 2 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path state-spaces/mamba-370m-hf --accumulation_steps 16 --is_mamba
+
+
 
