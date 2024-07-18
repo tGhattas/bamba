@@ -291,10 +291,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
                     # Gradient clipping
                     (torch.nn.utils if accelerator is None else  accelerator).clip_grad_norm_(student_model.parameters(), max_norm=0.5)
                     optimizer.step()
-                    logger.log({"epoch": epoch, "running_loss": running_loss.item()})
-                    logger.log({"epoch": epoch, "running_distillation_loss": running_distillation_loss.item()})
-                    logger.log({"epoch": epoch, "running_cross_entropy_loss": running_cross_entropy_loss.item()})
-                    logger.log({"epoch": epoch, "learning_rate": optimizer.param_groups[0]['lr']})
+                    logger.log({"running_loss": running_loss.item()})
+                    logger.log({"running_distillation_loss": running_distillation_loss.item()})
+                    logger.log({"running_cross_entropy_loss": running_cross_entropy_loss.item()})
+                    logger.log({"learning_rate": optimizer.param_groups[0]['lr']})
 
                     running_loss = 0
                     running_distillation_loss = 0
