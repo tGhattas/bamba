@@ -519,11 +519,13 @@ if __name__ == "__main__":
     parser.add_argument("--use_teacher_tokenizer", action="store_true", default=False)
     parser.add_argument("--teacher_model_path", type=str, default=teacher_model_path)
     parser.add_argument("--wandb_name", type=str, default='')
+    parser.add_argument("--wandb_id", type=str, default=None)
     parser.add_argument("--use_accelerate", action="store_true", default=False)
     parser.add_argument("--minimize_dataset", action="store_true", default=False)
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=2.0)
     parser.add_argument("--evaluate", action="store_true", default=False)
+    parser.add_argument("--resume", action="store_true", default=False)
 
     args = parser.parse_args()
     
@@ -554,7 +556,9 @@ if __name__ == "__main__":
         wandb.init(
             project="MMB-SE-KD-ULD",
             config=log_config_dict,
-            name=f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"
+            name=None if args.resume else f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model",
+            resume=args.resume,
+            id=args.wandb_id
         )
         init_logger(wandb)
 
