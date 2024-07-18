@@ -4,7 +4,7 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 from torch.nn import DataParallel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM, TrainingArguments, Trainer
 from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
@@ -328,6 +328,43 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         evaluate(teacher_model, eval_dataloader=eval_dataloader, is_student=False, pad_token_id=pad_token_id, gpu=gpu)
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
+def finetune_teacher(batch_size: int, max_length: int, minimize_dataset:bool, epochs:int):
+    # fine tune teacher model using hf trainer
+    training_args = TrainingArguments(
+        output_dir="./hf-results",
+        overwrite_output_dir=True,
+        num_train_epochs=epochs,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        evaluation_strategy="epoch",
+        logging_dir="./logs",
+        logging_steps=10,
+        report_to="wandb",  # Enable logging to wandb
+    )
+
+
+    train_dataloader, _ = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset)
+    test_dataloader, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset)
+    model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataloader,
+        eval_dataset=test_dataloader,
+    )
+
+    # Train the model
+    trainer.train()
+
+    # Evaluate the model
+    eval_results = trainer.evaluate()
+
+    # Log evaluation results to wandb
+    wandb.log(eval_results)
+
+    print("Evaluation results:", eval_results)
+    
+    
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
