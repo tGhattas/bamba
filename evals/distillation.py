@@ -404,11 +404,11 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
                             minimize_dataset=minimize_dataset, unique_id=unique_id, alpha=alpha, temperature=temperature)
     # save the student model
     if accelerator is None:
-        (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"u{unique_id}full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
+        (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"u{unique_id}full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}_alfa_{alpha}_tmp_{temperature}")
     else:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(student_model)
-        unwrapped_model.save_pretrained(f"u{unique_id}distr_full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}")
+        unwrapped_model.save_pretrained(f"u{unique_id}distr_full_trained_epoch_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}_alfa_{alpha}_tmp_{temperature}")
 
 
 # Evaluate the student model
