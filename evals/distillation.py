@@ -342,7 +342,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
 
 
-
     if accelerator is not None:
         train_dataset, test_dataset, model = accelerator.prepare(train_dataset, test_dataset, model)
 
@@ -359,6 +358,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=64,
         remove_unused_columns=False,
+        fp16=True
     )
     lr_scheduler = get_scheduler("cosine", torch.optim.Adam(model.parameters(), lr=lr), num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
     trainer = Trainer(
@@ -383,6 +383,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
     print("Evaluation results:", eval_results)
     
+
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer, minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int, alpha: float, temperature: float, learning_rate: float, teacher_model_path: str = teacher_model_path):
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
