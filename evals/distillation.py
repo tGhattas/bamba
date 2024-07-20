@@ -341,9 +341,10 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
     model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
 
-
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    lr_scheduler = get_scheduler("cosine", optimizer, num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
     if accelerator is not None:
-        train_dataset, test_dataset, model = accelerator.prepare(train_dataset, test_dataset, model)
+        train_dataset, test_dataset, model, optimizer, lr_scheduler = accelerator.prepare(train_dataset, test_dataset, model, optimizer, lr_scheduler)
 
     training_args = TrainingArguments(
         output_dir="./hf-results",
@@ -360,7 +361,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         remove_unused_columns=False,
         fp16=True
     )
-    lr_scheduler = get_scheduler("cosine", torch.optim.Adam(model.parameters(), lr=lr), num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
+    
     trainer = Trainer(
         model=model,
         args=training_args,
