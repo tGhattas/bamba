@@ -333,7 +333,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
 
-def finetune_teacher(batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, teacher_model_path: str = teacher_model_path):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, teacher_model_path: str = teacher_model_path):
     # fine tune teacher model using hf trainer
 
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
@@ -368,7 +368,7 @@ def finetune_teacher(batch_size: int, max_length: int, minimize_dataset:bool, ep
     eval_results = trainer.evaluate()
 
     # save the model
-    trainer.save_model
+    trainer.save_model(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
     # Log evaluation results to wandb
     wandb.log(eval_results)
 
@@ -541,7 +541,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
 
-    unique_run_id = str(random.randint(0, 1000)) + str(int(time.time()))
+    unique_run_id = str(random.randint(0, 1000)) + str(int(time.time()))[:4]
     name_prefix = f"{unique_run_id}_{args.wandb_name}_"
     log_config_dict = {
                 "limit": str(args.limit),
@@ -574,7 +574,7 @@ if __name__ == "__main__":
         init_logger(wandb)
 
     if args.finetune_teacher:
-        finetune_teacher(batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, teacher_model_path=args.teacher_model_path)
+        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, teacher_model_path=args.teacher_model_path)
     else:
         train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
             learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
