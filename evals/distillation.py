@@ -23,7 +23,7 @@ from uld_loss import ULDLoss
 from pprint import pprint
 from modified_tokenizer import ModifiedMambaTokenizerFactory
 import time
-
+from hf_trainer import KDTrainer
 import wandb
 
 
@@ -333,13 +333,15 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, teacher_model_path: str = teacher_model_path):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: torch.optim.Optimizer, teacher_model_path: str = teacher_model_path):
     # fine tune teacher model using hf trainer
 
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
 
     model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
+
+
 
     if accelerator is not None:
         train_dataset, test_dataset, model = accelerator.prepare(train_dataset, test_dataset, model)
@@ -379,14 +381,60 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
     print("Evaluation results:", eval_results)
     
+def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer, minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int, alpha: float, temperature: float, learning_rate: float, teacher_model_path: str = teacher_model_path):
+    train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
+    test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
+    lr_scheduler = get_scheduler("cosine", optimizer, num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
+
+    training_args = TrainingArguments(
+        output_dir="./hf-results",
+        overwrite_output_dir=True,
+        num_train_epochs=epochs,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        evaluation_strategy="epoch",
+        logging_dir="./logs",
+        logging_steps=10,
+        learning_rate=learning_rate,
+        report_to="wandb",  # Enable logging to wandb
+        gradient_accumulation_steps=accumulation_steps,
+    )
+    trainer = KDTrainer(
+        model=student_model,
+        teacher_model=teacher_model,
+        temperature=temperature,
+        alfa=alpha,
+        args=training_args,
+        data_collator=teacher_data_collator,
+        train_dataset=train_dataset,
+        eval_dataset=test_dataset,
+        optimizers=(optimizer, lr_scheduler)
+    )
+
+    # Train the model
+    trainer.train()
+
+    # Evaluate the model
+    eval_results = trainer.evaluate()
+    printF = pprint if accelerator is None else accelerator.print
+    printF("Evaluation results:", eval_results)
+    # save the model
+    if accelerator is None:
+        student_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}")
+    else:
+        accelerator.wait_for_everyone()
+        unwrapped_model = accelerator.unwrap_model(student_model)
+        unwrapped_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}")
     
+
+
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
            learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
              is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
                use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
-                 minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0):   
+                 minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -412,11 +460,13 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     student_model.train()
 
     optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
-    
-    distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
-                       load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
-                          modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path,
-                            minimize_dataset=minimize_dataset, unique_id=unique_id, alpha=alpha, temperature=temperature)
+    if hf_trainer:
+        hf_train(teacher_model, student_model, optimizer)
+    else:
+        distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
+                        load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
+                            modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path,
+                                minimize_dataset=minimize_dataset, unique_id=unique_id, alpha=alpha, temperature=temperature)
     # save the student model
     if accelerator is None:
         (student_model.module if isinstance(student_model, DataParallel) else student_model).save_pretrained(f"u{unique_id}_{epochs}_lr_{learning_rate}_is_mamba_{is_mamba}_max_length_{max_length}_alfa_{alpha}_tmp_{temperature}_{model_path}")
