@@ -341,6 +341,9 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
     model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
 
+    if accelerator is not None:
+        train_dataset, test_dataset, model = accelerator.prepare(train_dataset, test_dataset, model)
+
     training_args = TrainingArguments(
         output_dir="./hf-results",
         overwrite_output_dir=True,
