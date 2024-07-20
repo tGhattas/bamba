@@ -321,10 +321,10 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         
         print(mem_trace) if accelerator is None else print(f"process index: {accelerator.process_index}", mem_trace)
         
-        if os.path.exists("./checkpoints") == False:
-            os.mkdir("./checkpoints")
-        if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
-            torch.save(student_model.state_dict(), f"./checkpoints/u{unique_id}_student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
+        # if os.path.exists("./checkpoints") == False:
+        #     os.mkdir("./checkpoints")
+        # if (accelerator is not None and accelerator.is_main_process) or accelerator is None:
+        #     torch.save(student_model.state_dict(), f"./checkpoints/u{unique_id}_student_chkpt_epoch_{epoch}_type_{'mamba' if isinstance(student_model, MambaLMHeadModel) else 'transformer'}_max_length_{max_length}.pt")
     
     
     if (accelerator is not None) or accelerator is None:
@@ -368,7 +368,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     eval_results = trainer.evaluate()
 
     # save the model
-    trainer.save_model(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
+    model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
     # Log evaluation results to wandb
     wandb.log(eval_results)
 
