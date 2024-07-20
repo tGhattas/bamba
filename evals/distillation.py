@@ -333,7 +333,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: torch.optim.Optimizer, teacher_model_path: str = teacher_model_path):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, teacher_model_path: str = teacher_model_path):
     # fine tune teacher model using hf trainer
 
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
@@ -358,15 +358,16 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         learning_rate=lr,
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=64,
-        remove_unused_columns=False
+        remove_unused_columns=False,
     )
+    lr_scheduler = get_scheduler("cosine", torch.optim.Adam(model.parameters(), lr=lr), num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
     trainer = Trainer(
         model=model,
         args=training_args,
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        
+        optimizers=(torch.optim.Adam(model.parameters(), lr=lr), lr_scheduler)
     )
 
     # Train the model
