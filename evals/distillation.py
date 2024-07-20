@@ -563,7 +563,7 @@ if __name__ == "__main__":
         init_accelerate()
         accelerator.print("-----Accelerate Initialized-----")
         accelerator.init_trackers(
-            project_name="ACC-MAMBA-KD-ULD",
+            project_name="HF-ACC",
             config=log_config_dict,
             init_kwargs={"wandb": {"name": f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
         )
