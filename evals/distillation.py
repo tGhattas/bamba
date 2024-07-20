@@ -358,6 +358,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         learning_rate=lr,
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=64,
+        remove_unused_columns=False
     )
     trainer = Trainer(
         model=model,
@@ -398,6 +399,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         learning_rate=learning_rate,
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=accumulation_steps,
+        remove_unused_columns=False
     )
     trainer = KDTrainer(
         model=student_model,
