@@ -352,6 +352,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         logging_steps=10,
         learning_rate=lr,
         report_to="wandb",  # Enable logging to wandb
+        gradient_accumulation_steps=64,
     )
     trainer = Trainer(
         model=model,
