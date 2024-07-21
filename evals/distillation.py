@@ -366,7 +366,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        optimizers=(torch.optim.Adam(model.parameters(), lr=lr), lr_scheduler)
+        optimizers=(optimizer, lr_scheduler)
     )
 
     # Train the model
