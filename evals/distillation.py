@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.nn import DataParallel
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM, TrainingArguments, Trainer
-from accelerate import Accelerator
+from accelerate import Accelerator, load_checkpoint_and_dispatch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -25,6 +25,7 @@ from modified_tokenizer import ModifiedMambaTokenizerFactory
 import time
 from hf_trainer import KDTrainer
 import wandb
+
 
 
 logger = None
@@ -338,9 +339,14 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
-
-    model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
-
+    from accelerate import init_empty_weights
+    if accelerator is None:
+        model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
+    else:
+        with init_empty_weights():
+            model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
+        model = load_checkpoint_and_dispatch(model, checkpoint=teacher_model_path, device_map="auto", no_split_module_classes=['Block'])
+        
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     lr_scheduler = get_scheduler("cosine", optimizer, num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
     if accelerator is not None:
