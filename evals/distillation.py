@@ -341,9 +341,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
     model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
    
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    lr_scheduler = get_scheduler("cosine", optimizer, num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
-   
     training_args = TrainingArguments(
         output_dir="./hf-results",
         overwrite_output_dir=True,
@@ -357,7 +354,9 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=64,
         remove_unused_columns=False,
-        fp16=True
+        fp16=True,
+        optim="adamw",
+        lr_scheduler_type="cosine",
     )
     
     trainer = Trainer(
@@ -366,7 +365,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        optimizers=(optimizer, lr_scheduler)
     )
 
     # Train the model
@@ -386,7 +384,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer, minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int, alpha: float, temperature: float, learning_rate: float, teacher_model_path: str = teacher_model_path):
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
-    lr_scheduler = get_scheduler("cosine", optimizer, num_warmup_steps=int(0.05 * epochs * len(train_dataset)), num_training_steps=epochs * len(train_dataset))
 
     training_args = TrainingArguments(
         output_dir="./hf-results",
@@ -400,7 +397,9 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         learning_rate=learning_rate,
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=accumulation_steps,
-        remove_unused_columns=False
+        remove_unused_columns=False,
+        lr_scheduler="cosine",
+        optim="adamw",
     )
     trainer = KDTrainer(
         model=student_model,
@@ -411,7 +410,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        optimizers=(optimizer, lr_scheduler)
     )
 
     # Train the model
