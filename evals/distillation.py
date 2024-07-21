@@ -350,7 +350,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         logging_dir="./logs",
         logging_steps=10,
         learning_rate=lr,
@@ -378,7 +378,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     # save the model
     model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
     # Log evaluation results to wandb
-    wandb.log(eval_results)
+    logger.log(eval_results)
 
     print("Evaluation results:", eval_results)
     
@@ -394,7 +394,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         logging_dir="./logs",
         logging_steps=10,
         learning_rate=learning_rate,
