@@ -355,7 +355,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         gradient_accumulation_steps=64,
         remove_unused_columns=False,
         fp16=True,
-        optim="adamw_hf",
+        optim="adalomo",
+        gradient_checkpointing=True,
         lr_scheduler_type="cosine",
     )
     
@@ -399,7 +400,8 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         gradient_accumulation_steps=accumulation_steps,
         remove_unused_columns=False,
         lr_scheduler="cosine",
-        optim="adamw_hf",
+        optim="adalomo",
+        gradient_checkpointing=True,
     )
     trainer = KDTrainer(
         model=student_model,
