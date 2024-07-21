@@ -25,6 +25,7 @@ from modified_tokenizer import ModifiedMambaTokenizerFactory
 import time
 from hf_trainer import KDTrainer
 import wandb
+from trl import SFTTrainer
 
 
 
@@ -360,7 +361,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         lr_scheduler_type="cosine",
     )
     
-    trainer = Trainer(
+    trainer = SFTTrainer(
         model=model,
         args=training_args,
         data_collator=teacher_data_collator,
@@ -400,7 +401,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         gradient_accumulation_steps=accumulation_steps,
         remove_unused_columns=False,
         lr_scheduler="cosine",
-        optim="adalomo",
+        optim="adamw_anyprecision"
         gradient_checkpointing=True,
     )
     trainer = KDTrainer(
