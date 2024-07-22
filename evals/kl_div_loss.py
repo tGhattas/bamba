@@ -32,7 +32,7 @@ class KLDivLoss(nn.Module):
             torch.softmax(teacher_outputs / self.temperature, dim=-1),
         ) * (self.temperature ** 2)
 
-        scaling_factor = 100 if temperature != 1 else 10
+        scaling_factor = 100 if self.temperature != 1 else 10
         student_label_loss = nn.CrossEntropyLoss(ignore_index=self.ignore_idx)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         loss = self.distillation_loss_weight * distillation_loss / scaling_factor + (1 - self.distillation_loss_weight) * student_label_loss
             
