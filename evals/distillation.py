@@ -3,8 +3,8 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 from torch.nn import DataParallel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM
-from accelerate import Accelerator, load_checkpoint_and_dispatch
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM, BitsAndBytesConfig
+from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from itertools import islice
@@ -25,6 +25,7 @@ import time
 from hf_trainer import KDTrainer
 import wandb
 from trl import SFTTrainer, SFTConfig
+from peft import LoraConfig
 
 
 
@@ -334,12 +335,29 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, teacher_model_path: str = teacher_model_path):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, teacher_model_path: str = teacher_model_path):
     # fine tune teacher model using hf trainer
 
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False)
-    model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
+    if peft:
+        peft_config = LoraConfig(
+            r=16,
+            lora_alpha=64,
+            lora_dropout=0.1,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules="all-linear",
+        )
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_storage=torch.bfloat16,
+        )
+        model = AutoModelForCausalLM.from_pretrained(teacher_model_path, quantization_config=bnb_config, torch_dtype=torch.bfloat16)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
     name = f"u{unique_id}_finetuned_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
     training_args = SFTConfig(
         output_dir="./hf-results",
@@ -369,6 +387,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         max_seq_length=max_length,
+        peft_config=peft_config if peft else None,
     )
 
     # Train the model
