@@ -620,6 +620,7 @@ if __name__ == "__main__":
     parser.add_argument("--optimizer", type=str, default="adamw_hf")
     parser.add_argument("--mixed_precision", action="store_true", default=False)
     parser.add_argument("--tf32", action="store_true", default=False)
+    parser.add_argument("--peft", action="store_true", default=False)
     args = parser.parse_args()
     
 
@@ -658,7 +659,7 @@ if __name__ == "__main__":
         init_logger(wandb)
 
     if args.finetune_teacher:
-        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision, tf32=args.tf32)
+        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision, tf32=args.tf32, peft=args.peft)
     else:
         train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
             learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
