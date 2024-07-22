@@ -368,6 +368,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        max_seq_length=max_length,
     )
 
     # Train the model
@@ -630,14 +631,14 @@ if __name__ == "__main__":
         accelerator.init_trackers(
             project_name="HF-ACC",
             config=log_config_dict,
-            init_kwargs={"wandb": {"name": f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model"}}
+            init_kwargs={"wandb": {"name": f"{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')}},
         )
         init_logger(accelerator)
     else:
         wandb.init(
             project="MMB-SE-KD-ULD",
             config=log_config_dict,
-            name=None if args.resume else f"{name_prefix}modifiedTokenizer_{args.use_modified_tokenizer}_sameTokenizer_{args.use_teacher_tokenizer}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model",
+            name=None if args.resume else f"{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace ('/',''),
             resume=args.resume,
             id=args.wandb_id
         )
