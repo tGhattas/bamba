@@ -1,4 +1,3 @@
-from transformers import TrainingArguments
 from trl import SFTTrainer
 import torch
 import torch.nn as nn

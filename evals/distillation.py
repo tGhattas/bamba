@@ -1,10 +1,9 @@
-import os
 import random
 from typing import Optional, Union
 import torch
 import torch.nn as nn
 from torch.nn import DataParallel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM, TrainingArguments, Trainer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM
 from accelerate import Accelerator, load_checkpoint_and_dispatch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
@@ -25,7 +24,7 @@ from modified_tokenizer import ModifiedMambaTokenizerFactory
 import time
 from hf_trainer import KDTrainer
 import wandb
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 
 
@@ -342,7 +341,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False)
     model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
     name = f"u{unique_id}_finetuned_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir="./hf-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
@@ -389,7 +388,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
     name = f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir="./hf-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
