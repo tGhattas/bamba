@@ -402,7 +402,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         gradient_accumulation_steps=accumulation_steps,
         remove_unused_columns=False,
         lr_scheduler="cosine",
-        optim="adamw_anyprecision",
+        optim="adamw_hf",
         gradient_checkpointing=True,
         run_name=f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}",
     )
@@ -415,6 +415,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        accelerator=accelerator
     )
 
     # Train the model
