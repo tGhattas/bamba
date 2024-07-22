@@ -356,6 +356,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         gradient_accumulation_steps=64,
         remove_unused_columns=False,
         fp16=mixed_precision,
+        tf32=tf32,
         optim=optimizer,
         gradient_checkpointing=True, ###
         lr_scheduler_type="cosine",
