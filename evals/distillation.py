@@ -359,7 +359,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         optim=optimizer,
         gradient_checkpointing=True, ###
         lr_scheduler_type="cosine",
-        run_name=f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}",
+        run_name=f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}_optim{optimizer}",
     )
     
     trainer = SFTTrainer(
@@ -409,7 +409,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         lr_scheduler="cosine",
         optim="adamw_hf",
         gradient_checkpointing=True,
-        run_name=f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}",
+        run_name=f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}",
     )
     trainer = KDTrainer(
         model=student_model,
