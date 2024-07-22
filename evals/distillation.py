@@ -335,7 +335,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
         evaluate(student_model, eval_dataloader=eval_dataloader, is_student=True, pad_token_id=pad_token_id, gpu=gpu)
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, teacher_model_path: str = teacher_model_path):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, teacher_model_path: str = teacher_model_path):
     # fine tune teacher model using hf trainer
 
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
@@ -355,7 +355,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=64,
         remove_unused_columns=False,
-        fp16=True,
+        fp16=mixed_precision,
         optim=optimizer,
         gradient_checkpointing=True, ###
         lr_scheduler_type="cosine",
@@ -379,18 +379,20 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
     # save the model
     if accelerator is None:
-        model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
+        model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}_mp{mixed_precision}")
     else:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)
-        unwrapped_model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
+        unwrapped_model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}_mp{mixed_precision}")
     # Log evaluation results to wandb
     logger.log(eval_results)
 
     print("Evaluation results:", eval_results)
     
 
-def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int, alpha: float, temperature: float, learning_rate: float):
+def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], minimize_dataset: bool,
+                batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int, alpha: float, temperature: float,
+                  learning_rate: float, mixed_precision: bool, optimizer: str):
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
 
@@ -410,7 +412,8 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         lr_scheduler="cosine",
         optim="adamw_hf",
         gradient_checkpointing=True,
-        run_name=f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}",
+        fp16=mixed_precision,
+        run_name=f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}",
     )
     trainer = KDTrainer(
         model=student_model,
@@ -433,12 +436,12 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     printF("Evaluation results:", eval_results)
     # save the model
     if accelerator is None:
-        student_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}")
+        student_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_mp{mixed_precision}")
     else:
         if accelerator.is_main_process:
             accelerator.wait_for_everyone()
             unwrapped_model = accelerator.unwrap_model(student_model)
-            unwrapped_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}")
+            unwrapped_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_mp{mixed_precision}")
     
 
 
@@ -448,7 +451,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
            learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
              is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
                use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
-                 minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False, optimizer=None):   
+                 minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
+                   optimizer=None, mixed_precision: bool = False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -475,7 +479,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
     
     if hf_trainer:
-        hf_train(teacher_model, student_model, optimizer, batch_size, max_length, epochs, model_path, accumulation_steps, alpha, temperature, learning_rate)
+        hf_train(teacher_model, student_model, optimizer, batch_size, max_length, epochs, model_path, accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer)
     else:
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
         distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
@@ -609,6 +613,7 @@ if __name__ == "__main__":
     parser.add_argument("--finetune_teacher", action="store_true", default=False)
     parser.add_argument("--hf_trainer", action="store_true", default=False)
     parser.add_argument("--optimizer", type=str, default="adamw_hf")
+    parser.add_argument("--mixed_precision", action="store_true", default=False)
     args = parser.parse_args()
     
 
@@ -623,6 +628,7 @@ if __name__ == "__main__":
                 "model_path": str(args.model_path),
                 "is_mamba": str(args.is_mamba),
                 "accumulation_steps": str(args.accumulation_steps),
+                "mixed_precision": str(args.mixed_precision),
                 
         }
     if args.use_accelerate:
@@ -631,32 +637,30 @@ if __name__ == "__main__":
         accelerator.init_trackers(
             project_name="HF-ACC",
             config=log_config_dict,
-            init_kwargs={"wandb": {"name": f"{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')}},
+            init_kwargs={"wandb": {"name": f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')}},
         )
         init_logger(accelerator)
     else:
         wandb.init(
             project="MMB-SE-KD-ULD",
             config=log_config_dict,
-            name=None if args.resume else f"{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace ('/',''),
+            name=None if args.resume else f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-{args.model_path}-student".replace('.','').replace ('/',''),
             resume=args.resume,
             id=args.wandb_id
         )
         init_logger(wandb)
 
     if args.finetune_teacher:
-        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path)
+        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision)
     else:
         train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
             learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
             model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
             use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
-            teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha, temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer)
+            teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
+              temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision)
 
     # example command line run:
-    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --is_mamba --gpu 0
-    # python evals/distillation.py --limit 1000000000000 --batch_size 16 --max_length 256 --epochs 5 --learning_rate 1e-3 --load_chkpt --model_path ./checkpoints/student_chkpt_epoch_0_type_mamba_max_length_256.pt --is_mamba --gpu 0
-    # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path meta-llama/Meta-Llama-3-8B 
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
     # python evals/distillation.py --limit 100 --batch_size 2 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path state-spaces/mamba-370m-hf --accumulation_steps 16 --is_mamba
 
