@@ -341,7 +341,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False)
     model = smart_to(AutoModelForCausalLM.from_pretrained(teacher_model_path), "cuda" if torch.cuda.is_available() else "mps")
-   
+    name = f"u{unique_id}_finetuned_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
     training_args = TrainingArguments(
         output_dir="./hf-results",
         overwrite_output_dir=True,
@@ -359,7 +359,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         optim=optimizer,
         gradient_checkpointing=True, ###
         lr_scheduler_type="cosine",
-        run_name=f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}_optim{optimizer}",
+        run_name=name,
     )
     
     trainer = SFTTrainer(
@@ -373,18 +373,10 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
     # Train the model
     trainer.train()
-
+    trainer.save_model(name)
+    
     # Evaluate the model
     eval_results = trainer.evaluate()
-
-    # save the model
-    if accelerator is None:
-        model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}_mp{mixed_precision}")
-    else:
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(model)
-        unwrapped_model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}_mp{mixed_precision}")
-    # Log evaluation results to wandb
     logger.log(eval_results)
 
     print("Evaluation results:", eval_results)
@@ -395,7 +387,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
                   learning_rate: float, mixed_precision: bool, optimizer: str):
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
-
+    name = f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
     training_args = TrainingArguments(
         output_dir="./hf-results",
         overwrite_output_dir=True,
@@ -413,7 +405,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         optim="adamw_hf",
         gradient_checkpointing=True,
         fp16=mixed_precision,
-        run_name=f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}",
+        run_name=name,
     )
     trainer = KDTrainer(
         model=student_model,
@@ -429,19 +421,12 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
 
     # Train the model
     trainer.train()
-
+    # save the model
+    trainer.save_model(name)
     # Evaluate the model
     eval_results = trainer.evaluate()
     printF = pprint if accelerator is None else accelerator.print
     printF("Evaluation results:", eval_results)
-    # save the model
-    if accelerator is None:
-        student_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_mp{mixed_precision}")
-    else:
-        if accelerator.is_main_process:
-            accelerator.wait_for_everyone()
-            unwrapped_model = accelerator.unwrap_model(student_model)
-            unwrapped_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_mp{mixed_precision}")
     
 
 
