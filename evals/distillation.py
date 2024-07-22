@@ -356,10 +356,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         gradient_accumulation_steps=64,
         remove_unused_columns=False,
         fp16=True,
-        optim="galore_adafactor",
-        optim_args="rank=64, update_proj_gap=100, scale=0.10",
-        optim_target_modules=[r".*attn.*", r".*mlp.*"],
-        gradient_checkpointing=True,
+        optim="adamw_8bit",
+        gradient_checkpointing=True, ###
         lr_scheduler_type="cosine",
         run_name=f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}",
     )
