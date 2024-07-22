@@ -377,7 +377,12 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     eval_results = trainer.evaluate()
 
     # save the model
-    model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
+    if accelerator is None:
+        model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
+    else:
+        accelerator.wait_for_everyone()
+        unwrapped_model = accelerator.unwrap_model(model)
+        unwrapped_model.save_pretrained(f"u{unique_id}_finetuned_teacher_{epochs}_epochs_{teacher_model_path}")
     # Log evaluation results to wandb
     logger.log(eval_results)
 
