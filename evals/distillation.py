@@ -429,9 +429,10 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     if accelerator is None:
         student_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}")
     else:
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(student_model)
-        unwrapped_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}")
+        if accelerator.is_main_process:
+            accelerator.wait_for_everyone()
+            unwrapped_model = accelerator.unwrap_model(student_model)
+            unwrapped_model.save_pretrained(f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}")
     
 
 
