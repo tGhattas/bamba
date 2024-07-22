@@ -104,7 +104,7 @@ def init_dataloader(batch_size: int, max_length: int, partition: str = "train", 
 
     if student_tokenizer is not None:
         dataset = load_dataset("wikitext", dataset_path)
-       
+
         student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer, use_fast=True) if isinstance(student_tokenizer, str) else student_tokenizer
         student_tokenizer.pad_token = student_tokenizer.eos_token
         def student_tokenize_function(examples):
@@ -164,9 +164,9 @@ def logits_to_tokens(logits):
     return torch.argmax(logits, dim=-1)
 
 def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], optimizer: torch.optim.Optimizer,
-                       batch_size: int, max_length: int,
-                         limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1,
-                           modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None, minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0):
+                    batch_size: int, max_length: int,
+                    limit: int=1000, epochs: int=5, load_chkpt: bool=False, model_path: str=None, gpu: int = None, accumulation_steps: int = 1,
+                    modified_tokenizer: bool = False, use_teacher_tokenizer: bool = False, teacher_model_path: str = None, minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0):
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     printF = pprint if accelerator is None else accelerator.print
 
@@ -240,7 +240,7 @@ def distill_knowledge(teacher_model: AutoModelForCausalLM, student_model: Union[
     for epoch in range(epochs):
         with MemoryTrace() as mem_trace:
             progress_bar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=steps_per_epoch//accumulation_steps,
-                                 dynamic_ncols=True, disable=(accelerator is not None and not accelerator.is_local_main_process))
+                                dynamic_ncols=True, disable=(accelerator is not None and not accelerator.is_local_main_process))
             ignored_count = 0
             for batch_idx, (teacher_batch, student_batch)  in enumerate(islice(zip(teacher_train_dataloader, other_dataloader), limit)):
                 teacher_batched_input_ids = smart_to(teacher_batch['input_ids'], device)
@@ -384,7 +384,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], minimize_dataset: bool,
                 batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int, alpha: float, temperature: float,
-                  learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool):
+                learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool):
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
     name = f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
@@ -434,11 +434,11 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
-           learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
-             is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
-               use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
-                 minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
-                   optimizer=None, mixed_precision: bool = False, tf32: bool = False):   
+        learning_rate: float = 5e-5, load_chkpt: bool=False, load_hf_model: bool=False, model_path: str=None,
+        is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
+        use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
+        minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
+        optimizer=None, mixed_precision: bool = False, tf32: bool = False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -646,7 +646,7 @@ if __name__ == "__main__":
             model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
             use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
             teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
-              temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision, tf32=args.tf32)
+            temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision, tf32=args.tf32)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
