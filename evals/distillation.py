@@ -421,7 +421,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         gradient_accumulation_steps=accumulation_steps,
         remove_unused_columns=False,
         lr_scheduler="cosine",
-        optim="adamw_hf",
+        optim=optimizer,
         gradient_checkpointing=True,
         fp16=mixed_precision,
         tf32=tf32,
