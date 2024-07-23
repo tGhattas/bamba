@@ -232,7 +232,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         eval_dataset=test_dataset,
         max_seq_length=max_length,
         peft_config=peft_config if peft else None,
-        callbacks=[PerplexityCallback()],
+        # callbacks=[PerplexityCallback()],
     )
 
     # Train the model
@@ -284,7 +284,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         logger=logger,
-        callbacks=[PerplexityCallback()],
+        # callbacks=[PerplexityCallback()],
     )
     global accelerator
     accelerator = trainer.accelerator
