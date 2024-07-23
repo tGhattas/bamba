@@ -3,7 +3,6 @@ import os
 import random
 from typing import Optional, Union
 import torch
-import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, MambaForCausalLM, BitsAndBytesConfig, TrainingArguments, TrainerState, TrainerControl, TrainerCallback
 from accelerate import Accelerator
 from datasets import load_dataset
@@ -14,8 +13,6 @@ try:
     from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 except ImportError:
     class MambaLMHeadModel: pass
-from tqdm.auto import tqdm
-import numpy as np
 import argparse
 
 from pprint import pprint
@@ -24,7 +21,7 @@ import time
 from hf_trainer import KDTrainer
 import wandb
 from trl import SFTTrainer, SFTConfig
-from peft import LoraConfig
+from peft import LoraConfig, PeftModel
 from transformers.integrations import WandbCallback
 
 
@@ -44,7 +41,8 @@ teacher_model_path = pythia_28B_model_path
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
 def get_teacher_model(path: str, peft_config_path: str = None):
-    model = AutoModelForCausalLM.from_pretrained(path, peft=peft_config_path)
+    model = AutoModelForCausalLM.from_pretrained(path)
+    model = PeftModel.from_pretrained(model, peft_config_path) if peft_config_path else model
     return model
 
 
