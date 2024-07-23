@@ -255,6 +255,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        logger=logger,
     )
     global accelerator
     accelerator = trainer.accelerator
@@ -269,8 +270,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     eval_results = trainer.evaluate()
     printF = pprint if accelerator is None else accelerator.print
     printF("Evaluation results:", eval_results)
-    #log the evaluation results
-    trainer.log(eval_results)
+    logger.log(eval_results)
     
 
 
@@ -385,7 +385,7 @@ if __name__ == "__main__":
                 "tf32": str(args.tf32),
                 
         }
-    if args.use_accelerate:
+    if args.use_accelerate and not args.hf_trainer:
         init_accelerate(args.hf_trainer)
         if not args.hf_trainer:
             accelerator.print("-----Accelerate Initialized-----")
@@ -396,10 +396,12 @@ if __name__ == "__main__":
             )
             init_logger(accelerator)
     else:
+        if args.use_accelerate:
+            init_accelerate(args.hf_trainer)
         wandb.init(
-            project="MMB-SE-KD-ULD",
+            project="MAMABA",
             config=log_config_dict,
-            name=None if args.resume else f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-{args.model_path}-student".replace('.','').replace ('/',''),
+            name=None if args.resume else f"{args.use_accelerate}-acc-{args.mixed_precision}-mp-{args.epochs}-eps-{args.max_length}-maxLen-{args.alpha}alfa-{args.temperature}tmp-{args.batch_size}-BS-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-{teacher_model_path}-teacher-{args.model_path}-student".replace('.','').replace ('/',''),
             resume=args.resume,
             id=args.wandb_id
         )
