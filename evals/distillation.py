@@ -397,7 +397,7 @@ if __name__ == "__main__":
     parser.add_argument("--mixed_precision", action="store_true", default=False)
     parser.add_argument("--tf32", action="store_true", default=False)
     parser.add_argument("--peft", action="store_true", default=False)
-    parser.add_argument("--peft_config_path", type=str, default=str)
+    parser.add_argument("--peft_config_path", type=str, default=None)
     args = parser.parse_args()
     
 
