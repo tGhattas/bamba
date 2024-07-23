@@ -28,5 +28,5 @@ class KDTrainer(SFTTrainer):
             teacher_outputs = self.teacher_model(**inputs)
         labels = inputs.get("labels")
         loss, student_label_loss, distillation_loss = self.kd_loss(student_outputs, teacher_outputs, labels)
-        wandb.log({"student_label_loss": student_label_loss, "distillation_loss": distillation_loss})
+        self.log({"student_label_loss": student_label_loss, "distillation_loss": distillation_loss})
         return (loss, student_outputs) if return_outputs else loss

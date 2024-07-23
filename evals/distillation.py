@@ -211,17 +211,15 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     # Train the model
     trainer.train()
     trainer.save_model(name)
-    
     # Evaluate the model
     eval_results = trainer.evaluate()
-    logger.log(eval_results)
-
     print("Evaluation results:", eval_results)
     
 
-def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM], minimize_dataset: bool,
-                batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int, alpha: float, temperature: float,
-                learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool, teacher_model_path: str = teacher_model_path):
+def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM],
+            minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int,
+            alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool,
+            teacher_model_path: str = teacher_model_path):
     # student_model.pad_token = student_tokenizer.eos_token
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
@@ -271,6 +269,8 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     eval_results = trainer.evaluate()
     printF = pprint if accelerator is None else accelerator.print
     printF("Evaluation results:", eval_results)
+    #log the evaluation results
+    trainer.log(eval_results)
     
 
 
