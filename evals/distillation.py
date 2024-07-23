@@ -90,6 +90,11 @@ HF_PADDING_IGNORE = -100
 
 class PerplexityCallback(WandbCallback):
 
+    def __init__(self):
+        super().__init__()
+        self.setup(args, self.state, self.model)
+        
+
     def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, metrics=None, **kwargs):
 
         if metrics is None:
