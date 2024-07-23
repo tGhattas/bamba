@@ -268,7 +268,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         fp16=mixed_precision,
         tf32=tf32,
         run_name=name,
-        callbacks=[PerplexityCallback()],
     )
     trainer = KDTrainer(
         student_model=student_model,
@@ -281,6 +280,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         logger=logger,
+        callbacks=[PerplexityCallback()],
     )
     global accelerator
     accelerator = trainer.accelerator
