@@ -30,6 +30,6 @@ class KDTrainer(SFTTrainer):
         loss, student_label_loss, distillation_loss = self.kd_loss(student_outputs, teacher_outputs, labels)
 
         assert self.logger is not None, "Please pass a logger to the KDTrainer"
-        self.logger.log({"student_label_loss": student_label_loss, "distillation_loss": distillation_loss})
+        self.logger.log({"student_label_loss": student_label_loss, "distillation_loss": distillation_loss}, step=self.state.global_step)
 
         return (loss, student_outputs) if return_outputs else loss
