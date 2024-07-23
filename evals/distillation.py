@@ -272,7 +272,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     trainer = KDTrainer(
         student_model=student_model,
         teacher_model=teacher_model,
-        teacher_peft_config=None,
         temperature=temperature,
         alfa=alpha,
         args=training_args,
