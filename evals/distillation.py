@@ -1,8 +1,10 @@
+import math
+import os
 import random
 from typing import Optional, Union
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, get_scheduler, MambaForCausalLM, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, MambaForCausalLM, BitsAndBytesConfig, TrainingArguments, TrainerState, TrainerControl, TrainerCallback
 from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
@@ -23,11 +25,13 @@ from hf_trainer import KDTrainer
 import wandb
 from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig
+from transformers.integrations import WandbCallback
 
 
 
 logger = None
 accelerator = None
+log_config_dict = None
 hf_mamba_path = "state-spaces/mamba-790m-hf"
 teacher_model_path = "meta-llama/Meta-Llama-3-8B"
 tiny_model_path = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
@@ -39,8 +43,8 @@ teacher_model_path = pythia_28B_model_path
 
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
-def get_teacher_model(path: str):
-    model = AutoModelForCausalLM.from_pretrained(path)
+def get_teacher_model(path: str, peft_config_path: str = None):
+    model = AutoModelForCausalLM.from_pretrained(path, peft=peft_config_path)
     return model
 
 
@@ -85,6 +89,23 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
 
 HF_PADDING_IGNORE = -100
 
+class PerplexityCallback(WandbCallback):
+    def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, metrics=None, **kwargs):
+
+        if metrics is None:
+            metrics = {}
+        if 'eval_loss' in metrics:
+            # Calculate perplexity from the eval loss and add it to metrics
+            metrics['eval_perplexity'] = math.exp(metrics['eval_loss'])
+            wandb.log(metrics)
+
+    def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        # Access the logs, which should contain 'loss'
+        logs = kwargs['logs']
+        if 'loss' in logs:
+            # Calculate perplexity from the train loss and add it to logs
+            logs['train_perplexity'] = math.exp(logs['loss'])
+            wandb.log(logs)
 
 def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None, minimize_dataset: bool = False, return_dataloader: bool = True):
 
@@ -196,6 +217,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         gradient_checkpointing=not peft,
         lr_scheduler_type="cosine",
         run_name=name,
+        callbacks=[PerplexityCallback()],
     )
     
     trainer = SFTTrainer(
@@ -216,16 +238,17 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     print("Evaluation results:", eval_results)
     
 
+
+
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM],
             minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int,
-            alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool,
-            teacher_model_path: str = teacher_model_path):
+            alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool, teacher_model_path: str = teacher_model_path):
     # student_model.pad_token = student_tokenizer.eos_token
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
     test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
     name = f"u{unique_id}_hf_trained_student_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
-    
+
     training_args = SFTConfig(
         output_dir="./hf-results",
         overwrite_output_dir=True,
@@ -245,10 +268,12 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         fp16=mixed_precision,
         tf32=tf32,
         run_name=name,
+        callbacks=[PerplexityCallback()],
     )
     trainer = KDTrainer(
         student_model=student_model,
         teacher_model=teacher_model,
+        teacher_peft_config=None,
         temperature=temperature,
         alfa=alpha,
         args=training_args,
@@ -261,7 +286,11 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     accelerator = trainer.accelerator
     print_model_parameters(teacher_model_path, teacher_model, accelerator = trainer.accelerator)
     print_model_parameters(model_path, student_model, accelerator = trainer.accelerator)
-
+    accelerator.init_trackers(
+                project_name="HF-ACC",
+                config=log_config_dict,
+                init_kwargs={"wandb": {"name": f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')}},
+    )
     # Train the model
     trainer.train()
     # save the model
@@ -281,11 +310,12 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
         use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
         minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
-        optimizer=None, mixed_precision: bool = False, tf32: bool = False):   
+        optimizer=None, mixed_precision: bool = False, tf32: bool = False, peft_config_path: str = None):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
-    teacher_model = get_teacher_model(teacher_model_path)
+    assert (peft_config_path is not None and peft) or not peft, "PEFT config path must be provided if PEFT is True"
+    teacher_model = get_teacher_model(teacher_model_path, peft_config_path)
     smart_to(teacher_model, device)
     
     teacher_model.eval()
@@ -367,6 +397,7 @@ if __name__ == "__main__":
     parser.add_argument("--mixed_precision", action="store_true", default=False)
     parser.add_argument("--tf32", action="store_true", default=False)
     parser.add_argument("--peft", action="store_true", default=False)
+    parser.add_argument("--peft_config_path", type=str, default=str)
     args = parser.parse_args()
     
 
@@ -395,9 +426,10 @@ if __name__ == "__main__":
                 init_kwargs={"wandb": {"name": f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')}},
             )
             init_logger(accelerator)
-    else:
-        if args.use_accelerate:
+    elif args.use_accelerate:
             init_accelerate(args.hf_trainer)
+            # os.environ["WANDB_PROJECT"] = "HF-ACC"
+    else:
         wandb.init(
             project="MAMABA",
             config=log_config_dict,
@@ -415,7 +447,8 @@ if __name__ == "__main__":
             model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
             use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
             teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
-            temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision, tf32=args.tf32)
+            temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision,
+            tf32=args.tf32, peft_config_path=args.peft_config_path)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
