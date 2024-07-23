@@ -40,9 +40,10 @@ teacher_model_path = pythia_28B_model_path
 
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
-def get_teacher_model(path: str, peft_config_path: str = None):
+def get_teacher_model(path: str, peft_config_path: Optional[str] = None):
     model = AutoModelForCausalLM.from_pretrained(path)
-    model = PeftModel.from_pretrained(model, peft_config_path) if peft_config_path else model
+    if peft_config_path:
+        model = PeftModel.from_pretrained(model, peft_config_path)
     return model
 
 
