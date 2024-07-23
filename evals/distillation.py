@@ -217,7 +217,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         gradient_checkpointing=not peft,
         lr_scheduler_type="cosine",
         run_name=name,
-        callbacks=[PerplexityCallback()],
     )
     
     trainer = SFTTrainer(
@@ -228,6 +227,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         eval_dataset=test_dataset,
         max_seq_length=max_length,
         peft_config=peft_config if peft else None,
+        callbacks=[PerplexityCallback()],
     )
 
     # Train the model
