@@ -90,6 +90,7 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
 HF_PADDING_IGNORE = -100
 
 class PerplexityCallback(WandbCallback):
+
     def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, metrics=None, **kwargs):
 
         if metrics is None:
@@ -97,7 +98,7 @@ class PerplexityCallback(WandbCallback):
         if 'eval_loss' in metrics:
             # Calculate perplexity from the eval loss and add it to metrics
             metrics['eval_perplexity'] = math.exp(metrics['eval_loss'])
-            wandb.log(metrics)
+            self._wandb.log(metrics)
 
     def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         # Access the logs, which should contain 'loss'
@@ -105,7 +106,7 @@ class PerplexityCallback(WandbCallback):
         if 'loss' in logs:
             # Calculate perplexity from the train loss and add it to logs
             logs['train_perplexity'] = math.exp(logs['loss'])
-            wandb.log(logs)
+            self._wandb.log(logs)
 
 def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None, minimize_dataset: bool = False, return_dataloader: bool = True):
 
