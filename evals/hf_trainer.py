@@ -8,14 +8,14 @@ from kl_div_loss import KLDivLoss
 
 class KDTrainer(SFTTrainer):
 
-    def __init__(self, teacher_model=None, student_model=None, temperature=None, alfa=None, accelerator=None, *args, **kwargs):
+    def __init__(self, teacher_model=None, student_model=None, temperature=None, alfa=None, *args, **kwargs):
         super().__init__(model=student_model, *args, **kwargs)
         self.teacher_model = teacher_model
         self.temperature = temperature
         self.alfa = alfa
         self.kd_loss = KLDivLoss(temperature=temperature, distillation_loss_weight=alfa)
-        if accelerator is not None:
-            self.accelerator = accelerator
+        if hasattr(self, 'accelerator') and self.accelerator is not None:
+            print("-------------------Using accelerator in KDTrainer-------------------")
             self.teacher_model = self.accelerator.prepare(teacher_model)
         else:
             device = "cuda" if torch.cuda.is_available() else "cpu"
