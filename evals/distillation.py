@@ -322,7 +322,6 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
-    assert (peft_config_path is not None and peft) or not peft, "PEFT config path must be provided if PEFT is True"
     teacher_model = get_teacher_model(teacher_model_path, peft_config_path, peft=peft)
     smart_to(teacher_model, device)
     
