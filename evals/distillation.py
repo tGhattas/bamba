@@ -226,6 +226,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         run_name=name,
         load_best_model_at_end=True,
         max_seq_length=max_length,
+        save_strategy="epoch",
     )
     
     trainer = SFTTrainer(
@@ -278,6 +279,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         tf32=tf32,
         run_name=name,
         load_best_model_at_end=True,
+        save_strategy="epoch",
     )
     trainer = KDTrainer(
         student_model=student_model,
