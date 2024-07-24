@@ -204,7 +204,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
     name = f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
     training_args = SFTConfig(
-        output_dir="./hf-results",
+        output_dir=f"./ft-{unique_id}-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
@@ -223,6 +223,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         gradient_checkpointing=not peft,
         lr_scheduler_type="cosine",
         run_name=name,
+        load_best_model_at_end=True,
+        max_seq_length=max_length,
     )
     
     trainer = SFTTrainer(
@@ -231,7 +233,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        max_seq_length=max_length,
         peft_config=peft_config if peft else None,
         # callbacks=[PerplexityCallback()],
     )
@@ -256,7 +257,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     name = f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
 
     training_args = SFTConfig(
-        output_dir="./hf-results",
+        output_dir=f"./hf-{unique_id}-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
@@ -275,6 +276,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         fp16=mixed_precision,
         tf32=tf32,
         run_name=name,
+        load_best_model_at_end=True,
     )
     trainer = KDTrainer(
         student_model=student_model,
