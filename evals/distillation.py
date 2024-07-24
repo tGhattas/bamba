@@ -283,7 +283,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        logger=logger,
         # callbacks=[PerplexityCallback()],
     )
     global accelerator
