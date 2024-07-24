@@ -251,7 +251,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     # student_model.pad_token = student_tokenizer.eos_token
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
-    test_dataset, _, _ = init_dataloader(batch_size, max_length, "test", minimize_dataset=minimize_dataset, return_dataloader=False)
+    test_dataset, _, _ = init_dataloader(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False)
     name = f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
 
     training_args = SFTConfig(
@@ -336,9 +336,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
         distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
                         load_chkpt=load_chkpt, model_path=model_path, gpu=gpu, accumulation_steps=accumulation_steps,
-                            modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path,
-                                minimize_dataset=minimize_dataset, unique_id=unique_id, alpha=alpha, temperature=temperature, accelerator=accelerator, logger=logger)
-
+                        modified_tokenizer=use_modified_tokenizer, use_teacher_tokenizer=use_teacher_tokenizer, teacher_model_path=teacher_model_path,
+                        minimize_dataset=minimize_dataset, unique_id=unique_id, alpha=alpha, temperature=temperature, accelerator=accelerator, logger=logger)
 
 
 def smart_to(model, device="cuda" if torch.cuda.is_available() else "mps"):
