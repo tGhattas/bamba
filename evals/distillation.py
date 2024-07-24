@@ -283,6 +283,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        logger=logger,
         # callbacks=[PerplexityCallback()],
     )
     global accelerator
@@ -303,7 +304,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     printF = pprint if accelerator is None else accelerator.print
     printF("Evaluation results:", eval_results)
     logger = accelerator.get_tracker("wandb")
-    logger.log(eval_results)
+    logger.log(eval_results, global_step=trainer.state.global_step)
     
 
 
