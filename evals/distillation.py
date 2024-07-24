@@ -303,7 +303,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     eval_results = trainer.evaluate()
     printF = pprint if accelerator is None else accelerator.print
     printF("Evaluation results:", eval_results)
-    global logger
     logger = accelerator.get_tracker("wandb")
     logger.log(eval_results)
     
