@@ -71,7 +71,6 @@ def get_sanity_student_model(path: str=None):
     return model
 
 
-
 # MAMBA student model
 def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_size: bool = False):
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -91,8 +90,6 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
     return mamba_student_model
 
 
-
-# Step 3: Knowledge Distillation
 
 HF_PADDING_IGNORE = -100
 
@@ -119,6 +116,7 @@ class PerplexityCallback(WandbCallback):
             # Calculate perplexity from the train loss and add it to logs
             logs['train_perplexity'] = math.exp(logs['loss'])
             self._wandb.log(logs)
+
 
 def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None, minimize_dataset: bool = False, return_dataloader: bool = True):
 
@@ -208,7 +206,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
             bnb_4bit_quant_storage=torch.bfloat16,
         )
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path, quantization_config=bnb_config,
-                                                    torch_dtype=torch.bfloat16, device_map={'':torch.cuda.current_device()},)
+                                                    torch_dtype=torch.bfloat16, device_map={'':torch.cuda.current_device()})
     else:
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
     name = f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
