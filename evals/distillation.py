@@ -40,9 +40,17 @@ teacher_model_path = pythia_28B_model_path
 
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
-def get_teacher_model(path: str, peft_config_path: Optional[str] = None):
+def get_teacher_model(path: str, peft_config_path: Optional[str] = None, peft: bool = False):
     model = AutoModelForCausalLM.from_pretrained(path)
-    if peft_config_path:
+    if peft and peft_config_path is None:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_storage=torch.bfloat16,
+        )
+        model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16)
+    elif peft_config_path:
         model = PeftModel.from_pretrained(model, peft_config_path)
     return model
 
@@ -317,7 +325,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     assert (peft_config_path is not None and peft) or not peft, "PEFT config path must be provided if PEFT is True"
-    teacher_model = get_teacher_model(teacher_model_path, peft_config_path)
+    teacher_model = get_teacher_model(teacher_model_path, peft_config_path, peft=peft)
     smart_to(teacher_model, device)
     
     teacher_model.eval()
