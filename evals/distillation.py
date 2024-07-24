@@ -199,7 +199,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_quant_storage=torch.bfloat16,
         )
-        model = AutoModelForCausalLM.from_pretrained(teacher_model_path, quantization_config=bnb_config, torch_dtype=torch.bfloat16)
+        model = AutoModelForCausalLM.from_pretrained(teacher_model_path, quantization_config=bnb_config,
+                                                    torch_dtype=torch.bfloat16, device_map={'':torch.cuda.current_device()},)
     else:
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
     name = f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
