@@ -1,4 +1,3 @@
-import math
 import os
 import random
 from typing import Optional, Union
@@ -22,7 +21,6 @@ from hf_trainer import KDTrainer
 import wandb
 from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig, PeftModel
-from transformers.integrations import WandbCallback
 from accelerate import PartialState
 
 
@@ -137,7 +135,7 @@ def logits_to_tokens(logits):
 
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int, teacher_model_path: str = teacher_model_path, wandb_name: str = "", dataset_path: str = None):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int, teacher_model_path: str = teacher_model_path, wandb_name: str = "", dataset_path: str = None, evaluate_only: bool = False):
     # fine tune teacher model using hf trainer
 
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
@@ -197,9 +195,10 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         compute_metrics=compute_metrics,
     )
 
-    # Train the model
-    trainer.train()
-    trainer.save_model(name)
+    if not evaluate_only:
+        # Train the model
+        trainer.train()
+        trainer.save_model(name)
     # Evaluate the model
     eval_results = trainer.evaluate()
     print("Evaluation results:", eval_results)
@@ -273,7 +272,7 @@ def compute_metrics(eval_pred):
     # perplexity
     perplexity = torch.exp(loss)
 
-    return {"celoss": loss.item(), "perplexity": perplexity.item()}
+    return {"CE_loss": loss.item(), "perplexity": perplexity.item()}
 
 
 # Training Loop
