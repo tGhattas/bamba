@@ -49,7 +49,7 @@ def get_teacher_model(path: str, peft_config_path: Optional[str] = None, peft: b
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_quant_storage=torch.bfloat16,
         )
-        model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16)
+        model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
     elif peft_config_path:
         model = PeftModel.from_pretrained(model, peft_config_path)
     return model
