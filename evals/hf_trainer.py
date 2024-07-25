@@ -15,7 +15,7 @@ class KDTrainer(SFTTrainer):
         self.logger = logger
         if hasattr(self, 'accelerator') and self.accelerator is not None:
             print("-------------------Using accelerator in KDTrainer-------------------")
-            self.teacher_model = self.accelerator.prepare(teacher_model)
+            # self.teacher_model = self.accelerator.prepare(teacher_model)
             self.logger = self.accelerator.get_tracker("wandb")
         else:
             device = "cuda" if torch.cuda.is_available() else "cpu"
