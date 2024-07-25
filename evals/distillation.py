@@ -118,55 +118,32 @@ class PerplexityCallback(WandbCallback):
             self._wandb.log(logs)
 
 
-def init_dataloader(batch_size: int, max_length: int, partition: str = "train", student_tokenizer: Optional[Union[str, AutoTokenizer]] = None, minimize_dataset: bool = False, return_dataloader: bool = True):
+def get_dataset(batch_size: int, max_length: int, partition: str = "train", minimize_dataset: bool = False, return_dataloader: bool = True, dataset_path: str = None):
 
-    dataset_path = "wikitext-2-v1"
+    dataset_path = "wikitext-2-v1" if dataset_path is None else dataset_path
 
-    if student_tokenizer is not None:
-        dataset = load_dataset("wikitext", dataset_path)
-
-        student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer, use_fast=True) if isinstance(student_tokenizer, str) else student_tokenizer
-        student_tokenizer.pad_token = student_tokenizer.eos_token
-        def student_tokenize_function(examples):
-            return smart_to(student_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt"), "cuda" if torch.cuda.is_available() else "mps")
-        
-        student_tokenized_datasets = dataset.map(student_tokenize_function, batched=True, remove_columns=["text"])
-        student_data_collator = DataCollatorForLanguageModeling(
-            tokenizer=student_tokenizer,
-            mlm=False,  # Set to True if using Masked Language Modeling
-            pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
-        )
-
-        _tokenized_data = student_tokenized_datasets[partition] if not minimize_dataset else student_tokenized_datasets[partition].select(range(10))
-        student_data_loader = DataLoader(_tokenized_data, batch_size=batch_size, collate_fn=student_data_collator) if return_dataloader else _tokenized_data
-    
-    
-    dataset = load_dataset("wikitext", dataset_path)
+    dataset = load_dataset("wikitext", dataset_path, streaming=False, split=partition)
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
     # add padding token to the tokenizer
     teacher_tokenizer.pad_token = teacher_tokenizer.eos_token
-    if student_tokenizer:
-        student_tokenizer.pad_token = teacher_tokenizer.pad_token
     # Tokenize the dataset
     def teacher_tokenize_function(examples):
-        return smart_to(teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt"), "cuda" if torch.cuda.is_available() else "mps")
-
-    teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, remove_columns=["text"])
+        return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
+    num_of_gpus = max(torch.cuda.device_count(), 1)
+    teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, num_proc=4,
+                                            remove_columns=["text"], batch_size=batch_size * num_of_gpus)
 
     teacher_data_collator = DataCollatorForLanguageModeling(
         tokenizer=teacher_tokenizer,
         mlm=False,  # Set to True if using Masked Language Modeling
         pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
     )
-    tokenized_data = teacher_tokenized_datasets[partition] if not minimize_dataset else teacher_tokenized_datasets[partition].select(range(10))
+    tokenized_data = teacher_tokenized_datasets if not minimize_dataset else teacher_tokenized_datasets.take(100)
     # Create the data loader
-    teacher_data_loader = DataLoader(tokenized_data, batch_size=batch_size, collate_fn=teacher_data_collator) if return_dataloader else tokenized_data
+    teacher_data = DataLoader(tokenized_data, batch_size=batch_size, collate_fn=teacher_data_collator) if return_dataloader else tokenized_data
 
-    if student_tokenizer:
-        return (teacher_data_loader, student_data_loader, teacher_tokenizer.pad_token_id) if return_dataloader else (teacher_data_loader, student_data_loader, teacher_tokenizer.pad_token_id, teacher_data_collator, student_data_collator)
-    
-    return (teacher_data_loader, teacher_tokenizer.pad_token_id) if return_dataloader else  (teacher_data_loader, teacher_tokenizer.pad_token_id, teacher_data_collator)
+    return (teacher_data, teacher_tokenizer.pad_token_id, teacher_data_collator)
 
 
 
@@ -185,11 +162,11 @@ def logits_to_tokens(logits):
 
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int, teacher_model_path: str = teacher_model_path, wandb_name: str = ""):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int, teacher_model_path: str = teacher_model_path, wandb_name: str = "", dataset_path: str = None):
     # fine tune teacher model using hf trainer
 
-    train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
-    test_dataset, _, _ = init_dataloader(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False)
+    train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
+    test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     if peft:
         peft_config = LoraConfig(
             r=16,
@@ -232,6 +209,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         run_name=name,
         load_best_model_at_end=True,
         max_seq_length=max_length,
+        
     )
     
     trainer = SFTTrainer(
@@ -256,11 +234,12 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM],
             minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int,
-            alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool, teacher_model_path: str = teacher_model_path, wandb_name: str = ""):
+            alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool, teacher_model_path: str = teacher_model_path,
+            wandb_name: str = "", dataset_path: str = None):
     # student_model.pad_token = student_tokenizer.eos_token
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
-    train_dataset, _, teacher_data_collator = init_dataloader(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False)
-    test_dataset, _, _ = init_dataloader(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False)
+    train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
+    test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     name = f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
 
     training_args = SFTConfig(
@@ -318,7 +297,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
         use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
         minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
-        optimizer=None, mixed_precision: bool = False, tf32: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = ""):   
+        optimizer=None, mixed_precision: bool = False, tf32: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = "", dataset_path: str = None):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -341,7 +320,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
 
     if hf_trainer:
         hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
-                accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path, wandb_name)
+                accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path, wandb_name, dataset_path)
     else:
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
         distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
@@ -404,6 +383,7 @@ if __name__ == "__main__":
     parser.add_argument("--tf32", action="store_true", default=False)
     parser.add_argument("--peft", action="store_true", default=False)
     parser.add_argument("--peft_config_path", type=str, default=None)
+    parser.add_argument("--dataset_path", type=str, default=None)
     args = parser.parse_args()
     
 
@@ -446,7 +426,7 @@ if __name__ == "__main__":
         init_logger(wandb)
 
     if args.finetune_teacher:
-        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision, tf32=args.tf32, peft=args.peft, accumulation_steps=args.accumulation_steps, wandb_name=args.wandb_name)
+        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision, tf32=args.tf32, peft=args.peft, accumulation_steps=args.accumulation_steps, wandb_name=args.wandb_name, dataset_path=args.dataset_path)
     else:
         train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
             learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
@@ -454,7 +434,7 @@ if __name__ == "__main__":
             use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
             teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
             temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision,
-            tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name)
+            tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name, dataset_path=args.dataset_path)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba

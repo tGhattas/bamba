@@ -2,6 +2,8 @@ from trl import SFTTrainer
 import torch
 from kl_div_loss import KLDivLoss
 
+# import wandb
+# wandb.init()
 
 class KDTrainer(SFTTrainer):
 
@@ -21,7 +23,7 @@ class KDTrainer(SFTTrainer):
             device = "cuda" if torch.cuda.is_available() else "cpu"
             self.teacher_model.to(device)
         
-    
+        
     def compute_loss(self, model, inputs, return_outputs=False):
         student_outputs = model(**inputs)
         with torch.no_grad():
@@ -30,6 +32,7 @@ class KDTrainer(SFTTrainer):
         loss, student_label_loss, distillation_loss = self.kd_loss(student_outputs, teacher_outputs, labels)
 
         assert self.logger is not None, "Please pass a logger to the KDTrainer"
-        self.logger.log({"student_label_loss": student_label_loss, "distillation_loss": distillation_loss}, step=self.state.global_step)
+        self.logger.log({"student_label_loss": student_label_loss}, step=self.state.global_step)
+        self.logger.log({"distillation_loss": distillation_loss}, step=self.state.global_step)
 
         return (loss, student_outputs) if return_outputs else loss
