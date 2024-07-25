@@ -3,11 +3,11 @@ import os
 import random
 from typing import Optional, Union
 import torch
+from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, MambaForCausalLM, BitsAndBytesConfig, TrainingArguments, TrainerState, TrainerControl, TrainerCallback
 from accelerate import Accelerator
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from numpy import isnan
 from legacy_DK import distill_knowledge
 try:
     from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
@@ -90,32 +90,7 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
     return mamba_student_model
 
 
-
 HF_PADDING_IGNORE = -100
-
-class PerplexityCallback(WandbCallback):
-
-    def __init__(self):
-        super().__init__()
-        self.setup(args, self.state, self.model)
-        
-
-    def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, metrics=None, **kwargs):
-
-        if metrics is None:
-            metrics = {}
-        if 'eval_loss' in metrics:
-            # Calculate perplexity from the eval loss and add it to metrics
-            metrics['eval_perplexity'] = math.exp(metrics['eval_loss'])
-            self._wandb.log(metrics)
-
-    def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-        # Access the logs, which should contain 'loss'
-        logs = kwargs['logs']
-        if 'loss' in logs:
-            # Calculate perplexity from the train loss and add it to logs
-            logs['train_perplexity'] = math.exp(logs['loss'])
-            self._wandb.log(logs)
 
 
 def get_dataset(batch_size: int, max_length: int, partition: str = "train", minimize_dataset: bool = False, return_dataloader: bool = True, dataset_path: str = None):
@@ -209,7 +184,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         run_name=name,
         load_best_model_at_end=True,
         max_seq_length=max_length,
-        
+        eval_on_start=True,
     )
     
     trainer = SFTTrainer(
@@ -219,7 +194,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         peft_config=peft_config if peft else None,
-        # callbacks=[PerplexityCallback()],
+        compute_metrics=compute_metrics,
     )
 
     # Train the model
@@ -263,6 +238,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         tf32=tf32,
         run_name=name,
         load_best_model_at_end=True,
+        eval_on_start=True,
     )
     trainer = KDTrainer(
         student_model=student_model,
@@ -273,22 +249,31 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        # callbacks=[PerplexityCallback()],
+        compute_metrics=compute_metrics,
     )
     global accelerator
     accelerator = trainer.accelerator
     print_model_parameters(teacher_model_path, teacher_model, accelerator = trainer.accelerator)
-    print_model_parameters(model_path, student_model, accelerator = trainer.accelerator)
+    print_model_parameters(model_path, student_model, accelerator = trainer.accelerator)    
     # Train the model
     trainer.train()
     # save the model
     trainer.save_model(name)
     # Evaluate the model
-    eval_results = trainer.evaluate()
+    post_eval_results = trainer.evaluate()
     printF = pprint if accelerator is None else accelerator.print
-    printF("Evaluation results:", eval_results)
+    printF("Post-training evaluation results:", post_eval_results)
     
 
+def compute_metrics(eval_pred):
+    preds, labels = eval_pred
+    preds_tensor = torch.tensor(preds, dtype=torch.float32)
+    labels_tensor = torch.tensor(labels, dtype=torch.long)
+    loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(preds_tensor.view(-1, preds_tensor.size(-1)), labels_tensor.view(-1))
+    # perplexity
+    perplexity = torch.exp(loss)
+
+    return {"celoss": loss.item(), "perplexity": perplexity.item()}
 
 
 # Training Loop
@@ -402,8 +387,11 @@ if __name__ == "__main__":
                 "tf32": str(args.tf32),
                 
         }
+    if not torch.cuda.is_available():
+        os.environ["WANDB_PROJECT"] = "LOCAL_RUN"
     if args.use_accelerate and not args.hf_trainer:
         init_accelerate(args.hf_trainer)
+
         if not args.hf_trainer:
             accelerator.print("-----Accelerate Initialized-----")
             accelerator.init_trackers(
@@ -414,12 +402,11 @@ if __name__ == "__main__":
             init_logger(accelerator)
     elif args.use_accelerate:
             init_accelerate(args.hf_trainer)
-            # os.environ["WANDB_PROJECT"] = "HF-ACC"
     else:
         wandb.init(
             project="MAMABA",
             config=log_config_dict,
-            name=None if args.resume else f"{args.use_accelerate}-acc-{args.mixed_precision}-mp-{args.epochs}-eps-{args.max_length}-maxLen-{args.alpha}alfa-{args.temperature}tmp-{args.batch_size}-BS-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-{teacher_model_path}-teacher-{args.model_path}-student".replace('.','').replace ('/',''),
+            name=None if args.resume else f"{args.use_accelerate}-acc-{args.mixed_precision}-mp-{args.epochs}-eps-{args.max_length}maxLen-{args.alpha}alfa-{args.temperature}tmp-{args.batch_size}BS-{args.learning_rate}-lr-{args.accumulation_steps}-accum-{teacher_model_path}-t-{args.model_path}-st".replace('.','').replace ('/',''),
             resume=args.resume,
             id=args.wandb_id
         )

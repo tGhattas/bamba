@@ -2,8 +2,6 @@ from trl import SFTTrainer
 import torch
 from kl_div_loss import KLDivLoss
 
-# import wandb
-# wandb.init()
 
 class KDTrainer(SFTTrainer):
 
@@ -19,7 +17,7 @@ class KDTrainer(SFTTrainer):
             print("-------------------Using accelerator in KDTrainer-------------------")
             self.teacher_model = self.accelerator.prepare(teacher_model)
             self.logger = self.accelerator.get_tracker("wandb")
-            print("--------KDTrainer---Logger-------------", self.logger)
+            print("--------KDTrainer---Logger----------", self.logger)
         else:
             device = "cuda" if torch.cuda.is_available() else "cpu"
             self.teacher_model.to(device)
@@ -37,3 +35,5 @@ class KDTrainer(SFTTrainer):
         self.logger.log({"distillation_loss": distillation_loss}, step=self.state.global_step)
 
         return (loss, student_outputs) if return_outputs else loss
+
+
