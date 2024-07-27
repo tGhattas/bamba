@@ -386,17 +386,25 @@ if __name__ == "__main__":
                 "tf32": str(args.tf32),
                 
         }
+    
+    wandb_name = f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')
     if not torch.cuda.is_available():
         os.environ["WANDB_PROJECT"] = "LOCAL_RUN"
+    else:
+        os.environ["WANDB_PROJECT"] = "hf-MAMBA"
     if args.use_accelerate and not args.hf_trainer:
         init_accelerate(args.hf_trainer)
-
+        if args.resume:
+            os.environ["WANDB_RESUME"] = "must"
+            assert args.wandb_id is not None, "Please provide a wandb_id to resume"
+            os.environ["WANDB_RUN_ID"] = args.wandb_id
+        
         if not args.hf_trainer:
             accelerator.print("-----Accelerate Initialized-----")
             accelerator.init_trackers(
                 project_name="HF-ACC",
                 config=log_config_dict,
-                init_kwargs={"wandb": {"name": f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')}},
+                init_kwargs={"wandb": {"name": wandb_name}},
             )
             init_logger(accelerator)
     elif args.use_accelerate:
@@ -405,7 +413,7 @@ if __name__ == "__main__":
         wandb.init(
             project="MAMABA",
             config=log_config_dict,
-            name=None if args.resume else f"{args.use_accelerate}-acc-{args.mixed_precision}-mp-{args.epochs}-eps-{args.max_length}maxLen-{args.alpha}alfa-{args.temperature}tmp-{args.batch_size}BS-{args.learning_rate}-lr-{args.accumulation_steps}-accum-{teacher_model_path}-t-{args.model_path}-st".replace('.','').replace ('/',''),
+            name=None if args.resume else wandb_name,
             resume=args.resume,
             id=args.wandb_id
         )
