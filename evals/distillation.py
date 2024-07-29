@@ -395,6 +395,7 @@ if __name__ == "__main__":
         os.environ["WANDB_PROJECT"] = "LOCAL_RUN"
     else:
         os.environ["WANDB_PROJECT"] = "hf-MAMBA"
+        os.environ["WANDB_NAME"] = wandb_name
     if args.use_accelerate and not args.hf_trainer:
         init_accelerate(args.hf_trainer)
         if args.resume:
