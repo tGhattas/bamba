@@ -169,7 +169,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size // 2,
-        eval_accumulation_steps=2,
+        # eval_accumulation_steps=2,
         eval_strategy="steps",
         eval_steps=200 if not minimize_dataset else 10,
         logging_dir="./logs",
@@ -206,6 +206,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         trainer.save_model(name)
     # Evaluate the model
     eval_results = trainer.evaluate()
+    # add perplexity
+    eval_results["perplexity"] = torch.exp(eval_results["loss"])
     print("Evaluation results:", eval_results)
     
 
@@ -266,6 +268,8 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     trainer.save_model(name)
     # Evaluate the model
     post_eval_results = trainer.evaluate()
+    # add perplexity
+    post_eval_results["perplexity"] = torch.exp(post_eval_results["loss"])
     printF = pprint if accelerator is None else accelerator.print
     printF("Post-training evaluation results:", post_eval_results)
 

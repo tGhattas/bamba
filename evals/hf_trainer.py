@@ -157,6 +157,7 @@ class KDTrainer(SFTTrainer):
         self.temperature = temperature
         self.alfa = alfa
         self.kd_loss = KLDivLoss(temperature=temperature, distillation_loss_weight=alfa)
+        self.eval_loss = KLDivLoss(temperature=1, distillation_loss_weight=0)
         self.teacher_model.eval()
         self.logger = logger
         if hasattr(self, 'accelerator') and self.accelerator is not None:
@@ -174,7 +175,11 @@ class KDTrainer(SFTTrainer):
         with torch.no_grad():
             teacher_outputs = self.teacher_model(**inputs)
         labels = inputs.get("labels")
-        loss, student_label_loss, distillation_loss = self.kd_loss(student_outputs, teacher_outputs, labels)
+        # if in evaluation mode, calulate only the student loss
+        if return_outputs:
+            loss, student_label_loss, distillation_loss, student_outputs = self.eval_loss(student_outputs, teacher_outputs, labels)
+        else:
+            loss, student_label_loss, distillation_loss = self.kd_loss(student_outputs, teacher_outputs, labels)
 
         assert self.logger is not None, "Please pass a logger to the KDTrainer"
         self.logger.log({"student_label_loss": student_label_loss}, step=self.state.global_step)
