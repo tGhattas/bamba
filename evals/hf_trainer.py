@@ -177,7 +177,7 @@ class KDTrainer(SFTTrainer):
         labels = inputs.get("labels")
         # if in evaluation mode, calulate only the student loss
         if return_outputs:
-            loss, student_label_loss, distillation_loss, student_outputs = self.eval_loss(student_outputs, teacher_outputs, labels)
+            loss, student_label_loss, distillation_loss = self.eval_loss(student_outputs, teacher_outputs, labels)
         else:
             loss, student_label_loss, distillation_loss = self.kd_loss(student_outputs, teacher_outputs, labels)
 
