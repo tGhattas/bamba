@@ -287,6 +287,9 @@ def compute_metrics(eval_pred):
     result = {"CE_loss": loss.item(), "perplexity": perplexity.item(), "loss": loss.item()}
     return result
 
+def fix_mamba_config(model):
+    model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
+    model.config.keys_to_ignore_at_inference.append("cache_params")
 
 def fix_mamba_config(model):
     model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
