@@ -207,7 +207,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     # Evaluate the model
     eval_results = trainer.evaluate()
     # add perplexity
-    eval_results["eval_perplexity"] = torch.exp(eval_results["eval_perplexity"])
+    eval_results["eval_perplexity"] = torch.exp(eval_results["eval_loss"])
     print("Evaluation results:", eval_results)
     
 
@@ -269,7 +269,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     # Evaluate the model
     post_eval_results = trainer.evaluate()
     # add perplexity
-    post_eval_results["eval_perplexity"] = torch.exp(post_eval_results["eval_perplexity"])
+    post_eval_results["eval_perplexity"] = torch.exp(post_eval_results["eval_loss"])
     printF = pprint if accelerator is None else accelerator.print
     printF("Post-training evaluation results:", post_eval_results)
 
