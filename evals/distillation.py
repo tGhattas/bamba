@@ -187,7 +187,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         load_best_model_at_end=True,
         max_seq_length=max_length,
         eval_on_start=True,
-        torch_empty_cache_steps=100,
     )
     
     trainer = SFTTrainer(
@@ -197,7 +196,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         peft_config=peft_config if peft else None,
-        compute_metrics=compute_metrics,
+        # compute_metrics=compute_metrics,
         # preprocess_logits_for_metrics=logits_to_tokens,
     )
 
@@ -254,7 +253,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        compute_metrics=compute_metrics,  
+        # compute_metrics=compute_metrics,  
         # preprocess_logits_for_metrics=logits_to_tokens,      
     )
     global accelerator
