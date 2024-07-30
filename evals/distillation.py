@@ -6,6 +6,7 @@ from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, MambaForCausalLM, BitsAndBytesConfig
 from accelerate import Accelerator
 from datasets import load_dataset
+import evaluate
 from torch.utils.data import DataLoader
 from legacy_DK import distill_knowledge
 try:
@@ -131,6 +132,8 @@ def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, M
 
 def logits_to_tokens(logits):
     """Convert logits to token ids."""
+    if isinstance(logits, tuple):
+        logits = logits[0]
     return torch.argmax(logits, dim=-1)
 
 
@@ -158,17 +161,17 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
                                                     torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
     else:
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
-
-    model.config.use_cache = False
+    fix_mamba_config(model)
     name = f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
     training_args = SFTConfig(
         output_dir=f"./ft-{unique_id}-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size // 2,
+        eval_accumulation_steps=2,
         eval_strategy="steps",
-        eval_steps=100 if not minimize_dataset else 10,
+        eval_steps=200 if not minimize_dataset else 10,
         logging_dir="./logs",
         logging_steps=10,
         learning_rate=lr,
@@ -194,6 +197,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         eval_dataset=test_dataset,
         peft_config=peft_config if peft else None,
         compute_metrics=compute_metrics,
+        # preprocess_logits_for_metrics=logits_to_tokens,
     )
 
     if not evaluate_only:
@@ -216,14 +220,13 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     name = f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
-
-    student_model.config.use_cache = False
+    # student_model.config.use_cache = False
     training_args = SFTConfig(
         output_dir=f"./hf-{unique_id}-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size // 2,
         eval_strategy="steps",
         eval_steps=100 if not minimize_dataset else 10,
         logging_dir="./logs",
@@ -250,8 +253,8 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        compute_metrics=compute_metrics,
-        
+        compute_metrics=compute_metrics,  
+        # preprocess_logits_for_metrics=logits_to_tokens,      
     )
     global accelerator
     accelerator = trainer.accelerator
@@ -265,7 +268,13 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     post_eval_results = trainer.evaluate()
     printF = pprint if accelerator is None else accelerator.print
     printF("Post-training evaluation results:", post_eval_results)
-    
+
+
+# perplexity = evaluate.load("perplexity", module_type="metric")
+# def compute_metrics(eval_pred):
+#     predictions, labels = eval_pred
+#     result = perplexity.compute(predictions=predictions, references=labels)
+#     return result
 
 def compute_metrics(eval_pred):
     preds, labels = eval_pred
@@ -275,8 +284,13 @@ def compute_metrics(eval_pred):
     # perplexity
     perplexity = torch.exp(loss)
 
-    return {"CE_loss": loss.item(), "perplexity": perplexity.item()}
+    result = {"CE_loss": loss.item(), "perplexity": perplexity.item(), "loss": loss.item()}
+    return result
 
+
+def fix_mamba_config(model):
+    model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
+    model.config.keys_to_ignore_at_inference.append("cache_params")
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
@@ -304,8 +318,9 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
             student_model = get_mamba_model(gpu=gpu)
     student_model.train()
 
-
+    
     if hf_trainer:
+        fix_mamba_config(student_model)
         hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
                 accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path, wandb_name, dataset_path)
     else:
