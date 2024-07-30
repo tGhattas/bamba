@@ -187,6 +187,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         load_best_model_at_end=True,
         max_seq_length=max_length,
         eval_on_start=True,
+        torch_empty_cache_steps=100,
     )
     
     trainer = SFTTrainer(
