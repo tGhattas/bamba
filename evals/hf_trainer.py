@@ -176,10 +176,10 @@ class KDTrainer(SFTTrainer):
             teacher_outputs = self.teacher_model(**inputs)
         labels = inputs.get("labels")
         # if in evaluation mode, calulate only the student loss
-        if return_outputs:
-            loss, student_label_loss, distillation_loss = self.eval_loss(student_outputs, teacher_outputs, labels)
-        else:
+        if  model.training:
             loss, student_label_loss, distillation_loss = self.kd_loss(student_outputs, teacher_outputs, labels)
+        else:
+            loss, student_label_loss, distillation_loss = self.eval_loss(student_outputs, teacher_outputs, labels)
 
         assert self.logger is not None, "Please pass a logger to the KDTrainer"
         self.logger.log({"student_label_loss": student_label_loss}, step=self.state.global_step)
