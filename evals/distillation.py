@@ -171,7 +171,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         per_device_eval_batch_size=batch_size,
         # eval_accumulation_steps=2,
         eval_strategy="steps",
-        eval_steps=200 if not minimize_dataset else 10,
+        eval_steps=100 if not minimize_dataset else 10,
+        save_steps=600,
         logging_dir="./logs",
         logging_steps=10,
         learning_rate=lr,
@@ -231,6 +232,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         per_device_eval_batch_size=batch_size,
         eval_strategy="steps",
         eval_steps=100 if not minimize_dataset else 10,
+        save_steps=600,
         logging_dir="./logs",
         logging_steps=10,
         learning_rate=learning_rate,
@@ -255,8 +257,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        # compute_metrics=compute_metrics,  
-        # preprocess_logits_for_metrics=logits_to_tokens,      
     )
     global accelerator
     accelerator = trainer.accelerator
@@ -275,10 +275,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
 
 
 # perplexity = evaluate.load("perplexity", module_type="metric")
-# def compute_metrics(eval_pred):
-#     predictions, labels = eval_pred
-#     result = perplexity.compute(predictions=predictions, references=labels)
-#     return result
 
 def compute_metrics(eval_pred):
     preds, labels = eval_pred
