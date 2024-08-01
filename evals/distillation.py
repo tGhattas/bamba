@@ -50,6 +50,7 @@ def get_teacher_model(path: str, peft_config_path: Optional[str] = None, peft: b
         model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
         if peft_config_path:
             model = PeftModel.from_pretrained(model, peft_config_path)
+            model.merge_and_unload()
     else:
         model = AutoModelForCausalLM.from_pretrained(path)
     return model
@@ -162,6 +163,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
                                                     torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
     else:
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
+
     fix_mamba_config(model)
     name = f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}".replace('.','').replace('/','')
     training_args = SFTConfig(
@@ -198,8 +200,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         peft_config=peft_config if peft else None,
-        # compute_metrics=compute_metrics,
-        # preprocess_logits_for_metrics=logits_to_tokens,
     )
 
     if not evaluate_only:
@@ -276,17 +276,6 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
 
 
 # perplexity = evaluate.load("perplexity", module_type="metric")
-
-def compute_metrics(eval_pred):
-    preds, labels = eval_pred
-    preds_tensor = torch.tensor(preds, dtype=torch.float32)
-    labels_tensor = torch.tensor(labels, dtype=torch.long)
-    loss = nn.CrossEntropyLoss(ignore_index=HF_PADDING_IGNORE)(preds_tensor.view(-1, preds_tensor.size(-1)), labels_tensor.view(-1))
-    # perplexity
-    perplexity = torch.exp(loss)
-
-    result = {"CE_loss": loss.item(), "perplexity": perplexity.item(), "loss": loss.item()}
-    return result
 
 def fix_mamba_config(model):
     model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
