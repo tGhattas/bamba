@@ -50,7 +50,6 @@ def get_teacher_model(path: str, peft_config_path: Optional[str] = None, peft: b
         model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
         if peft_config_path:
             model = PeftModel.from_pretrained(model, peft_config_path)
-            model.merge_and_unload()
     else:
         model = AutoModelForCausalLM.from_pretrained(path)
     return model
@@ -218,7 +217,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM],
             minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int,
             alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool, teacher_model_path: str = teacher_model_path,
-            wandb_name: str = "", dataset_path: str = None):
+            wandb_name: str = "", dataset_path: str = None, scaling_factor:float = None):
     # student_model.pad_token = student_tokenizer.eos_token
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
@@ -258,6 +257,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         data_collator=teacher_data_collator,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        scaling_factor=scaling_factor,
     )
     global accelerator
     accelerator = trainer.accelerator
@@ -275,11 +275,21 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     printF("Post-training evaluation results:", post_eval_results)
 
 
-# perplexity = evaluate.load("perplexity", module_type="metric")
 
 def fix_mamba_config(model):
     model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
     model.config.keys_to_ignore_at_inference.append("cache_params")
+
+
+def manual_eval(model):
+    ''' evaluate the model on a text '''
+    perplexity = evaluate.load("perplexity", module_type="metric")
+    text = ""
+    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-2.8b")
+    encoded = tokenizer.encode(text)
+    output = model(encoded)
+
+    # perplexity.compute()
 
 
 # Training Loop
@@ -288,7 +298,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
         use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
         minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
-        optimizer=None, mixed_precision: bool = False, tf32: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = "", dataset_path: str = None):   
+        optimizer=None, mixed_precision: bool = False, tf32: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = "",
+        dataset_path: str = None, scaling_factor: float = None):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -312,7 +323,8 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     if hf_trainer:
         fix_mamba_config(student_model)
         hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
-                accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path, wandb_name, dataset_path)
+                accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path,
+                wandb_name, dataset_path, scaling_factor=scaling_factor)
     else:
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
         distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
@@ -376,6 +388,7 @@ if __name__ == "__main__":
     parser.add_argument("--peft", action="store_true", default=False)
     parser.add_argument("--peft_config_path", type=str, default=None)
     parser.add_argument("--dataset_path", type=str, default=None)
+    parser.add_argument("--scaling_factor", type=float, default=None)
     args = parser.parse_args()
     
 
@@ -437,7 +450,8 @@ if __name__ == "__main__":
             use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
             teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
             temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision,
-            tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name, dataset_path=args.dataset_path)
+            tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name, dataset_path=args.dataset_path,
+            scaling_factor=args.scaling_factor)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba

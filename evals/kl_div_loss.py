@@ -5,13 +5,14 @@ import torch
 
 class KLDivLoss(nn.Module):
 
-    def __init__(self, reduction='mean', temperature=1.0, ignore_idx=-100, distillation_loss_weight=0.5, using_acc=False, *args, **kwargs):
+    def __init__(self, reduction='mean', temperature=1.0, ignore_idx=-100, distillation_loss_weight=0.5, using_acc=False, scaling_factor=None, *args, **kwargs):
         super(KLDivLoss, self).__init__()
         self.reduction = reduction
         self.temperature = temperature
         self.ignore_idx = ignore_idx
         self.distillation_loss_weight = distillation_loss_weight
         self.using_acc = using_acc
+        self.scaling_factor = scaling_factor
 
     def forward(self, student_outputs, teacher_outputs, labels, *args, **kwargs):
         
@@ -34,7 +35,7 @@ class KLDivLoss(nn.Module):
             torch.softmax(teacher_outputs / self.temperature, dim=-1),
         ) * (self.temperature ** 2)
 
-        scaling_factor = 100 if self.temperature != 1 else 10
+        scaling_factor = (100 if self.temperature != 1 else 10) if self.scaling_factor is None else self.scaling_factor
         student_label_loss = nn.CrossEntropyLoss(ignore_index=self.ignore_idx)(student_outputs.view(-1, student_outputs.size(-1)), labels.view(-1))
         loss = self.distillation_loss_weight * distillation_loss / scaling_factor + (1 - self.distillation_loss_weight) * student_label_loss
             

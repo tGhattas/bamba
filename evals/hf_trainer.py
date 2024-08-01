@@ -151,12 +151,12 @@ logger = logging.get_logger(__name__)
 
 class KDTrainer(SFTTrainer):
 
-    def __init__(self, teacher_model=None, student_model=None, temperature=None, alfa=None, logger=None, *args, **kwargs):
+    def __init__(self, teacher_model=None, student_model=None, temperature=None, alfa=None, logger=None, scaling_factor=None, *args, **kwargs):
         super().__init__(model=student_model, *args, **kwargs)
         self.teacher_model = teacher_model
         self.temperature = temperature
         self.alfa = alfa
-        self.kd_loss = KLDivLoss(temperature=temperature, distillation_loss_weight=alfa)
+        self.kd_loss = KLDivLoss(temperature=temperature, distillation_loss_weight=alfa, scaling_factor=scaling_factor)
         self.eval_loss = KLDivLoss(temperature=1, distillation_loss_weight=0)
         self.teacher_model.eval()
         self.logger = logger
