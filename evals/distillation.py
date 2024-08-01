@@ -40,8 +40,7 @@ teacher_model_path = pythia_28B_model_path
 # teacher_model_path = "mistralai/Mistral-7B-v0.3"
 
 def get_teacher_model(path: str, peft_config_path: Optional[str] = None, peft: bool = False):
-    model = AutoModelForCausalLM.from_pretrained(path)
-    if peft and peft_config_path is None:
+    if peft:
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -49,8 +48,10 @@ def get_teacher_model(path: str, peft_config_path: Optional[str] = None, peft: b
             bnb_4bit_quant_storage=torch.bfloat16,
         )
         model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
-    elif peft_config_path:
-        model = PeftModel.from_pretrained(model, peft_config_path)
+        if peft_config_path:
+            model = PeftModel.from_pretrained(model, peft_config_path)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(path)
     return model
 
 
