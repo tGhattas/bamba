@@ -281,9 +281,6 @@ def fix_mamba_config(model):
     model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
     model.config.keys_to_ignore_at_inference.append("cache_params")
 
-def fix_mamba_config(model):
-    model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
-    model.config.keys_to_ignore_at_inference.append("cache_params")
 
 # Training Loop
 def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs: int = 5,
