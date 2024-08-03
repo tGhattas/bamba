@@ -88,3 +88,6 @@ for _ in range(repeats):
 torch_device.synchronize()
 print(f"Prompt length: {len(input_ids[0])}, generation length: {len(out.sequences[0]) - len(input_ids[0])}")
 print(f"{args.model_name} prompt processing + decoding time: {(time.time() - start) / repeats * 1000:.0f}ms")
+
+
+#  python ./evals/my_benchmark_generation_mamba_simple.py --prompt "I'm not sure about what to do this" --model state-spaces/mamba-790m-hf

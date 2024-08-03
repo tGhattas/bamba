@@ -96,8 +96,10 @@ HF_PADDING_IGNORE = -100
 def get_dataset(batch_size: int, max_length: int, partition: str = "train", minimize_dataset: bool = False, return_dataloader: bool = True, dataset_path: str = None):
 
     dataset_path = "wikitext-2-v1" if dataset_path is None else dataset_path
-
-    dataset = load_dataset("wikitext", dataset_path, streaming=False, split=partition)
+    if 'wikitext' in dataset_path:
+        dataset = load_dataset("wikitext", dataset_path, streaming=False, split=partition)
+    else:
+        dataset = load_dataset(dataset_path, streaming=False, split=partition)
     # Load the teacher tokenizer
     teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_model_path, use_fast=True)
     # add padding token to the tokenizer
@@ -275,21 +277,9 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     printF("Post-training evaluation results:", post_eval_results)
 
 
-
 def fix_mamba_config(model):
     model.config.keys_to_ignore_at_inference = getattr(model.config, "keys_to_ignore_at_inference", [])
     model.config.keys_to_ignore_at_inference.append("cache_params")
-
-
-def manual_eval(model):
-    ''' evaluate the model on a text '''
-    perplexity = evaluate.load("perplexity", module_type="metric")
-    text = ""
-    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-2.8b")
-    encoded = tokenizer.encode(text)
-    output = model(encoded)
-
-    # perplexity.compute()
 
 
 # Training Loop
@@ -405,7 +395,6 @@ if __name__ == "__main__":
                 "accumulation_steps": str(args.accumulation_steps),
                 "mixed_precision": str(args.mixed_precision),
                 "tf32": str(args.tf32),
-                
         }
     
     wandb_name = f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')
@@ -456,6 +445,7 @@ if __name__ == "__main__":
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
     # python evals/distillation.py --limit 100 --batch_size 2 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path state-spaces/mamba-370m-hf --accumulation_steps 16 --is_mamba
+
 
 
 
