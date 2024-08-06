@@ -72,20 +72,19 @@ def get_sanity_student_model(path: str=None):
 
 
 # MAMBA student model
-def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_size: bool = False):
+def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_size: bool = False, load_model_weights: bool = False):
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     teacher_model = get_teacher_model(teacher_model_path)
     param = next(teacher_model.parameters())
-    teacher_dtype = param.dtype
-    if path:
+    if path and load_model_weights:
         mamba_student_model = smart_to(MambaForCausalLM.from_pretrained(path), device)
         config = mamba_student_model.config
         if set_teacher_embedding_size:
             config.vocab_size = teacher_model.config.vocab_size
     else:
-        config = AutoConfig.from_pretrained(hf_mamba_path)
+        print("---------------------------------Loading Mamba model from scratch---------------------------------")
+        config = AutoConfig.from_pretrained(path if path is not None else hf_mamba_path)
         config.vocab_size = teacher_model.config.vocab_size
-        config.torch_dtype = teacher_dtype
         mamba_student_model = smart_to(MambaForCausalLM(config), device)
     return mamba_student_model
 
@@ -141,7 +140,8 @@ def logits_to_tokens(logits):
 
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int, teacher_model_path: str = teacher_model_path, wandb_name: str = "", dataset_path: str = None, evaluate_only: bool = False):
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int,
+                    teacher_model_path: str = teacher_model_path, wandb_name: str = "", dataset_path: str = None, evaluate_only: bool = False, load_hf_model: bool = False):
     # fine tune teacher model using hf trainer
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
@@ -160,10 +160,18 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_quant_storage=torch.bfloat16,
         )
+        assert load_hf_model, "PEFT requires a pre-trained model"
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path, quantization_config=bnb_config,
                                                     torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
     else:
-        model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
+        if load_hf_model:
+            model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
+        else:
+            print("---------------------------------Loading Teacher model from scratch---------------------------------")
+            config = AutoConfig.from_pretrained(teacher_model_path) 
+            model = AutoModelForCausalLM.from_config(config)
+
+        
 
     fix_mamba_config(model)
     name = f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}_{dataset_path}".replace('.','').replace('/','')
@@ -301,12 +309,12 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         if not is_mamba:
             student_model = smart_to(AutoModelForCausalLM.from_pretrained(model_path), device)
         else:
-            student_model = get_mamba_model(path=model_path, gpu=gpu)
+            student_model = get_mamba_model(path=model_path, gpu=gpu, load_model_weights=load_hf_model)
     else:
         if not is_mamba:
             student_model = smart_to(get_sanity_student_model(), device)
         else:
-            student_model = get_mamba_model(gpu=gpu)
+            student_model = get_mamba_model(path=model_path, gpu=gpu, load_model_weights=load_hf_model)
     student_model.train()
 
     
@@ -431,7 +439,7 @@ if __name__ == "__main__":
         init_logger(wandb)
 
     if args.finetune_teacher:
-        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision, tf32=args.tf32, peft=args.peft, accumulation_steps=args.accumulation_steps, wandb_name=args.wandb_name, dataset_path=args.dataset_path)
+        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision, tf32=args.tf32, peft=args.peft, accumulation_steps=args.accumulation_steps, wandb_name=args.wandb_name, dataset_path=args.dataset_path, load_hf_model=args.load_hf_model)
     else:
         train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
             learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
