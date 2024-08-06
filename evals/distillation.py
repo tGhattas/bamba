@@ -176,9 +176,9 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         # eval_accumulation_steps=2,
         eval_strategy="steps",
         eval_steps=100 if not minimize_dataset else 10,
-        save_steps=600,
+        save_steps=3000,
         logging_dir="./logs",
-        logging_steps=10,
+        logging_steps=100,
         learning_rate=lr,
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=accumulation_steps,
@@ -234,9 +234,9 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         per_device_eval_batch_size=batch_size,
         eval_strategy="steps",
         eval_steps=100 if not minimize_dataset else 10,
-        save_steps=600,
+        save_steps=3000,
         logging_dir="./logs",
-        logging_steps=10,
+        logging_steps=100,
         learning_rate=learning_rate,
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=accumulation_steps,
