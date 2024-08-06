@@ -107,7 +107,7 @@ def get_dataset(batch_size: int, max_length: int, partition: str = "train", mini
     def teacher_tokenize_function(examples):
         return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
     num_of_gpus = max(torch.cuda.device_count(), 1)
-    teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, num_proc=4,
+    teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, num_proc=10,
                                             remove_columns=["text"], batch_size=batch_size * num_of_gpus)
 
     teacher_data_collator = DataCollatorForLanguageModeling(
