@@ -382,7 +382,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
 
-    unique_run_id = str(random.randint(0, 1000)) + str(int(time.time()))[:4]
+    unique_run_id = str(random.randint(0, 9999))
     name_prefix = f"{unique_run_id}_{args.wandb_name}_"
     log_config_dict = {
                 "limit": str(args.limit),
