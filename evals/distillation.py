@@ -5,8 +5,7 @@ import torch
 from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, DataCollatorForLanguageModeling, MambaForCausalLM, BitsAndBytesConfig
 from accelerate import Accelerator
-from datasets import load_dataset
-import evaluate
+from datasets import load_dataset, load_from_disk
 from torch.utils.data import DataLoader
 from legacy_DK import distill_knowledge
 try:
@@ -107,9 +106,14 @@ def get_dataset(batch_size: int, max_length: int, partition: str = "train", mini
     def teacher_tokenize_function(examples):
         return teacher_tokenizer(examples["text"], truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
     num_of_gpus = max(torch.cuda.device_count(), 1)
-    teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, num_proc=10,
-                                            remove_columns=["text"], batch_size=batch_size * num_of_gpus)
-
+    
+    if os.path.exists(tokenized_dataset_path := f"./tokenized_datsets/{dataset_path}-{partition}-tokenized-mini-{minimize_dataset}"):
+        teacher_tokenized_datasets = load_from_disk(tokenized_dataset_path)
+        print("---------------------------Tokenized dataset loaded from disk---------------------------")
+    else:   
+        teacher_tokenized_datasets = dataset.map(teacher_tokenize_function, batched=True, num_proc=10,
+                                                remove_columns=["text"], batch_size=batch_size * num_of_gpus)
+        teacher_tokenized_datasets.save_to_disk(tokenized_dataset_path)
     teacher_data_collator = DataCollatorForLanguageModeling(
         tokenizer=teacher_tokenizer,
         mlm=False,  # Set to True if using Masked Language Modeling
@@ -181,7 +185,6 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        # eval_accumulation_steps=2,
         eval_strategy="steps",
         eval_steps=100 if not minimize_dataset else 10,
         save_steps=3000,
