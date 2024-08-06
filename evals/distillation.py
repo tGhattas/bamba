@@ -448,7 +448,7 @@ if __name__ == "__main__":
             learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
             model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
             use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
-            teacher_model_path=teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
+            teacher_model_path=args.teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
             temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision,
             tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name, dataset_path=args.dataset_path,
             scaling_factor=args.scaling_factor)
