@@ -369,7 +369,7 @@ def eval_lm_harness(name: str):
         results = lm_eval.simple_evaluate(
             model="hf",
             model_args=f"tokenizer=EleutherAI/pythia-1b,pretrained={path_prefix}{name}",
-            tasks="lambada_openai,hellaswag,arc_challenge,piqa,arc_easy",
+            tasks=["lambada_openai", "hellaswag", "arc_challenge", "piqa", "arc_easy"],
             log_samples=True,
         )
 
