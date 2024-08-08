@@ -23,6 +23,9 @@ from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig, PeftModel
 from accelerate import PartialState
 import numpy as np
+import lm_eval
+from lm_eval.loggers import WandbLogger
+
 
 logger = None
 accelerator = None
@@ -119,7 +122,7 @@ def get_dataset(batch_size: int, max_length: int, partition: str = "train", mini
         mlm=False,  # Set to True if using Masked Language Modeling
         pad_to_multiple_of=8  # Optional, can pad to the nearest multiple of 8 for efficiency
     )
-    tokenized_data = teacher_tokenized_datasets if not minimize_dataset else teacher_tokenized_datasets.take(100)
+    tokenized_data = teacher_tokenized_datasets if not minimize_dataset else teacher_tokenized_datasets.take(10)
     # Create the data loader
     teacher_data = DataLoader(tokenized_data, batch_size=batch_size, collate_fn=teacher_data_collator) if return_dataloader else tokenized_data
 
@@ -136,12 +139,12 @@ def print_model_parameters(model_name: str, model: Union[AutoModelForCausalLM, M
     printF(f"Trainable Parameters: {trainable_params}")
     printF(f"Total Memory Footprint: {total_params * 4 / 1024 / 1024} MB")
 
+
 def logits_to_tokens(logits):
     """Convert logits to token ids."""
     if isinstance(logits, tuple):
         logits = logits[0]
     return torch.argmax(logits, dim=-1)
-
 
 
 def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int,
@@ -223,6 +226,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     # add perplexity
     eval_results["eval_perplexity"] = np.exp(eval_results["eval_loss"])
     print("Evaluation results:", eval_results)
+
+    return name
     
 
 
@@ -286,6 +291,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     post_eval_results["eval_perplexity"] = np.exp(post_eval_results["eval_loss"])
     printF = pprint if accelerator is None else accelerator.print
     printF("Post-training evaluation results:", post_eval_results)
+    eval_lm_harness(name)
 
 
 def fix_mamba_config(model):
@@ -323,9 +329,10 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     
     if hf_trainer:
         fix_mamba_config(student_model)
-        hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
+        save_path = hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
                 accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path,
                 wandb_name, dataset_path, scaling_factor=scaling_factor)
+        eval_lm_harness(save_path)
     else:
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
         distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
@@ -353,6 +360,24 @@ def init_logger(logger_):
     global logger
     logger = logger_
 
+
+def eval_lm_harness(name: str):
+    # eval using eval lm harness
+    # accelerate launch --main_process_port 29531 -m lm_eval --model hf --model_args tokenizer=EleutherAI/pythia-1b,pretrained=/cs/labs/roys/w552295/bamba/u7084_WED-scale10-tmp6-alf9-pythia69Teacher__hf_train_WED-scale10-tmp6-alf9-pythia69Teacher_1_epochs_state-spacesmamba-370m-hf_optimadamw_bnb_8bit_mpFalse_JeanKaddourminipile --tasks lambada_openai,hellaswag,arc_challenge,piqa,arc_easy --batch_size 10 --output_path outputs/u7084
+
+    
+    path_prefix = "/cs/labs/roys/w552295/bamba/" if torch.cuda.is_available() else "./"
+    results = lm_eval.simple_evaluate(
+        model="hf",
+        model_args=f"tokenizer=EleutherAI/pythia-1b,pretrained={path_prefix}{name}",
+        tasks="lambada_openai,hellaswag,arc_challenge,piqa,arc_easy",
+        log_samples=True,
+    )
+
+    wandb_logger = WandbLogger()
+    wandb_logger.post_init(results)
+    wandb_logger.log_eval_result()
+    wandb_logger.log_eval_samples(results["samples"])  # if log_samples
 
 
 # command line run for training with parsing arguments
