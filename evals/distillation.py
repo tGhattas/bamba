@@ -291,7 +291,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     post_eval_results["eval_perplexity"] = np.exp(post_eval_results["eval_loss"])
     printF = pprint if accelerator is None else accelerator.print
     printF("Post-training evaluation results:", post_eval_results)
-    eval_lm_harness(name)
+    prep_eval_lm_harness(name)
 
 
 def fix_mamba_config(model):
@@ -332,7 +332,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         save_path = hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
                 accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path,
                 wandb_name, dataset_path, scaling_factor=scaling_factor)
-        eval_lm_harness(save_path)
+        prep_eval_lm_harness(save_path)
     else:
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
         distill_knowledge(teacher_model, student_model, optimizer, batch_size, max_length, limit=limit, epochs=epochs,
@@ -361,23 +361,24 @@ def init_logger(logger_):
     logger = logger_
 
 
-def eval_lm_harness(name: str):
+def prep_eval_lm_harness(name: str):
     # eval using eval lm harness
     # accelerate launch --main_process_port 29531 -m lm_eval --model hf --model_args tokenizer=EleutherAI/pythia-1b,pretrained=/cs/labs/roys/w552295/bamba/u7084_WED-scale10-tmp6-alf9-pythia69Teacher__hf_train_WED-scale10-tmp6-alf9-pythia69Teacher_1_epochs_state-spacesmamba-370m-hf_optimadamw_bnb_8bit_mpFalse_JeanKaddourminipile --tasks lambada_openai,hellaswag,arc_challenge,piqa,arc_easy --batch_size 10 --output_path outputs/u7084
-    path_prefix = "/cs/labs/roys/w552295/bamba/" if torch.cuda.is_available() else "./"
-    model_path = f"{path_prefix}{name}"
-    if os.path.exists(model_path):
-        results = lm_eval.simple_evaluate(
-            model="hf",
-            model_args=f"tokenizer=EleutherAI/pythia-1b,pretrained={model_path}",
-            tasks=["lambada_openai", "hellaswag", "arc_challenge", "piqa", "arc_easy"],
-            log_samples=True,
-        )
+    # path_prefix = "/cs/labs/roys/w552295/bamba/" if torch.cuda.is_available() else "./"
+    # model_path = f"{path_prefix}{name}"
+    # if os.path.exists(model_path):
+    #     results = lm_eval.simple_evaluate(
+    #         model="hf",
+    #         model_args=f"tokenizer=EleutherAI/pythia-1b,pretrained={model_path}",
+    #         tasks=["lambada_openai", "hellaswag", "arc_challenge", "piqa", "arc_easy"],
+    #         log_samples=True,
+    #     )
 
-        wandb_logger = WandbLogger()
-        wandb_logger.post_init(results)
-        wandb_logger.log_eval_result()
-        wandb_logger.log_eval_samples(results["samples"])  # if log_samples
+    #     wandb_logger = WandbLogger()
+    #     wandb_logger.post_init(results)
+    #     wandb_logger.log_eval_result()
+    #     wandb_logger.log_eval_samples(results["samples"])  # if log_samples
+    pass
 
 
 # command line run for training with parsing arguments
