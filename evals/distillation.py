@@ -393,7 +393,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_chkpt", action="store_true")
     parser.add_argument("--load_hf_model", action="store_true")
     parser.add_argument("--model_path", type=str, default=None)
-    parser.add_argument("--is_mamba", action="store_true", default=True)
+    parser.add_argument("--is_mamba", action="store_true", default=False)
     parser.add_argument("--gpu", type=int, default=None)
     parser.add_argument("--accumulation_steps", type=int, default=1)
     parser.add_argument("--use_modified_tokenizer", action="store_true", default=False)
