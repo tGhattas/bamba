@@ -190,7 +190,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         per_device_eval_batch_size=batch_size,
         eval_strategy="steps",
         eval_steps=100 if not minimize_dataset else 10,
-        save_steps=500,
+        save_steps=100,
         save_total_limit=3,
         logging_dir="./logs",
         logging_steps=100,
