@@ -88,7 +88,7 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
             #     bnb_4bit_quant_storage=torch.bfloat16,
             # )
             peft_config = LoraConfig(
-                r=64,
+                r=16,
                 lora_alpha=64,
                 lora_dropout=0.1,
                 bias="none",
@@ -286,7 +286,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         remove_unused_columns=False,
         lr_scheduler_type="cosine",
         optim=optimizer,
-        gradient_checkpointing=True,
+        gradient_checkpointing=student_peft_config is None,
         fp16=mixed_precision,
         tf32=tf32,
         run_name=name,
