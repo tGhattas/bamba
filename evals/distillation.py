@@ -98,7 +98,10 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
             mamba_student_model = MambaForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16,
                                                                     device_map={'':PartialState().process_index} if torch.cuda.is_available() else 'mps')
             mamba_student_model = get_peft_model(mamba_student_model, peft_config)
+            print("trainable parameters")
             mamba_student_model.print_trainable_parameters()
+            print("PEFT model")
+            print(mamba_student_model)
         else:
             mamba_student_model = MambaForCausalLM.from_pretrained(path)
         if set_teacher_embedding_size:
