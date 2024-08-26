@@ -81,12 +81,12 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
     assert (not peft) or (peft and load_model_weights), "PEFT requires a pre-trained model"
     if path and load_model_weights:
         if peft:
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_quant_storage=torch.bfloat16,
-            )
+            # bnb_config = BitsAndBytesConfig(
+            #     load_in_4bit=True,
+            #     bnb_4bit_quant_type="nf4",
+            #     bnb_4bit_compute_dtype=torch.bfloat16,
+            #     bnb_4bit_quant_storage=torch.bfloat16,
+            # )
             peft_config = LoraConfig(
                 r=64,
                 lora_alpha=64,
@@ -95,7 +95,9 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
                 task_type="CAUSAL_LM",
                 target_modules=["x_proj", "in_proj", "out_proj", "dt_proj"] #"all-linear"
             )
-            mamba_student_model = MambaForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16,
+            mamba_student_model = MambaForCausalLM.from_pretrained(path, 
+                                                                    # quantization_config=bnb_config,
+                                                                    # torch_dtype=torch.bfloat16,
                                                                     device_map={'':PartialState().process_index} if torch.cuda.is_available() else 'mps')
             mamba_student_model = get_peft_model(mamba_student_model, peft_config)
             print("trainable parameters")
