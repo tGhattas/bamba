@@ -20,7 +20,7 @@ import time
 from hf_trainer import KDTrainer
 import wandb
 from trl import SFTTrainer, SFTConfig
-from peft import LoraConfig, PeftModel
+from peft import LoraConfig, PeftModel, get_peft_model
 from accelerate import PartialState
 import numpy as np
 import lm_eval
@@ -88,15 +88,17 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
                 bnb_4bit_quant_storage=torch.bfloat16,
             )
             peft_config = LoraConfig(
-                r=16,
+                r=64,
                 lora_alpha=64,
                 lora_dropout=0.1,
                 bias="none",
                 task_type="CAUSAL_LM",
-                target_modules=["x_proj", "in_proj", "out_proj", "dt_proj"]
+                target_modules=["x_proj", "in_proj", "out_proj", "dt_proj"] #"all-linear"
             )
             mamba_student_model = MambaForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16,
                                                                     device_map={'':PartialState().process_index} if torch.cuda.is_available() else 'mps')
+            mamba_student_model = get_peft_model(mamba_student_model, peft_config)
+            mamba_student_model.print_trainable_parameters()
         else:
             mamba_student_model = MambaForCausalLM.from_pretrained(path)
         if set_teacher_embedding_size:
@@ -172,7 +174,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
     test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     if peft:
         peft_config = LoraConfig(
-            r=16,
+            r=64,
             lora_alpha=64,
             lora_dropout=0.1,
             bias="none",
