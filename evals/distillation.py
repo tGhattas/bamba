@@ -74,21 +74,36 @@ def get_sanity_student_model(path: str=None):
 
 
 # MAMBA student model
-def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_size: bool = False, load_model_weights: bool = False):
+def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_size: bool = False, load_model_weights: bool = False, peft: bool = False):
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     teacher_model = get_teacher_model(teacher_model_path)
-    param = next(teacher_model.parameters())
     if path and load_model_weights:
-        mamba_student_model = smart_to(MambaForCausalLM.from_pretrained(path), device)
-        config = mamba_student_model.config
+        if peft:
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_storage=torch.bfloat16,
+            )
+            peft_config = LoraConfig(
+                r=16,
+                lora_alpha=64,
+                lora_dropout=0.1,
+                bias="none",
+                task_type="CAUSAL_LM",
+                target_modules=["x_proj", "in_proj", "out_proj", "dt_proj"]
+            )
+            mamba_student_model = MambaForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
+        else:
+            mamba_student_model = MambaForCausalLM.from_pretrained(path)
         if set_teacher_embedding_size:
-            config.vocab_size = teacher_model.config.vocab_size
+            mamba_student_model.config.vocab_size = teacher_model.config.vocab_size
     else:
         print("---------------------------------Loading Mamba model from scratch---------------------------------")
         config = AutoConfig.from_pretrained(path if path is not None else hf_mamba_path)
         config.vocab_size = teacher_model.config.vocab_size
         mamba_student_model = smart_to(MambaForCausalLM(config), device)
-    return mamba_student_model
+    return mamba_student_model if not peft else (mamba_student_model, peft_config)
 
 
 HF_PADDING_IGNORE = -100
@@ -236,7 +251,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM],
             minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int,
             alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool, teacher_model_path: str = teacher_model_path,
-            wandb_name: str = "", dataset_path: str = None, scaling_factor:float = None):
+            wandb_name: str = "", dataset_path: str = None, scaling_factor:float = None, student_peft_config: Optional[LoraConfig] = None):
     # student_model.pad_token = student_tokenizer.eos_token
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
@@ -278,6 +293,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         scaling_factor=scaling_factor,
+        peft_config=student_peft_config,
     )
     global accelerator
     accelerator = trainer.accelerator
@@ -287,13 +303,22 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     trainer.train()
     # save the model
     trainer.save_model(name)
+
     # Evaluate the model
     post_eval_results = trainer.evaluate()
+    
+
     # add perplexity
     post_eval_results["eval_perplexity"] = np.exp(post_eval_results["eval_loss"])
     printF = pprint if accelerator is None else accelerator.print
     printF("Post-training evaluation results:", post_eval_results)
-    prep_eval_lm_harness(name)
+    printF("------------------------------------------------------", student_peft_config)
+    if student_peft_config:
+        printF('-'*1000, type(trainer.model))
+        # peft_model = PeftModel.from_pretrained(student_model, f"./{name}", config=student_peft_config)
+        trainer.model.merge_and_unload()
+        trainer.model.save_pretrained(name + "-PEFT")
+
 
 
 def fix_mamba_config(model):
@@ -308,7 +333,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
         minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
         optimizer=None, mixed_precision: bool = False, tf32: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = "",
-        dataset_path: str = None, scaling_factor: float = None):   
+        dataset_path: str = None, scaling_factor: float = None, frozen_layers: int = 0, peft_student: bool = False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -316,24 +341,32 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     smart_to(teacher_model, device)
     
     teacher_model.eval()
+    peft_config = None
     if load_hf_model:
         if not is_mamba:
             student_model = smart_to(AutoModelForCausalLM.from_pretrained(model_path), device)
         else:
-            student_model = get_mamba_model(path=model_path, gpu=gpu, load_model_weights=load_hf_model)
+            student_model = get_mamba_model(path=model_path, gpu=gpu, load_model_weights=load_hf_model, peft=peft_student)
+            student_model, peft_config = student_model if peft_student else (student_model, None)
     else:
         if not is_mamba:
             student_model = smart_to(get_sanity_student_model(), device)
         else:
-            student_model = get_mamba_model(path=model_path, gpu=gpu, load_model_weights=load_hf_model)
+            student_model = get_mamba_model(path=model_path, gpu=gpu, load_model_weights=load_hf_model, peft=peft_student)
     student_model.train()
+
+    # freeze the first few layers of the student model
+    for i in range(frozen_layers):
+        params = student_model.base_model.layers[i].parameters()
+        for param in params:
+            param.requires_grad = False
 
     
     if hf_trainer:
         fix_mamba_config(student_model)
         save_path = hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
                 accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path,
-                wandb_name, dataset_path, scaling_factor=scaling_factor)
+                wandb_name, dataset_path, scaling_factor=scaling_factor, student_peft_config=peft_config)
         prep_eval_lm_harness(save_path)
     else:
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
@@ -415,9 +448,11 @@ if __name__ == "__main__":
     parser.add_argument("--mixed_precision", action="store_true", default=False)
     parser.add_argument("--tf32", action="store_true", default=False)
     parser.add_argument("--peft", action="store_true", default=False)
+    parser.add_argument("--peft_student", action="store_true", default=False)
     parser.add_argument("--peft_config_path", type=str, default=None)
     parser.add_argument("--dataset_path", type=str, default=None)
     parser.add_argument("--scaling_factor", type=float, default=None)
+    parser.add_argument("--frozen_layers", type=int, default=0)
     args = parser.parse_args()
     
 
@@ -479,7 +514,7 @@ if __name__ == "__main__":
             teacher_model_path=args.teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
             temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision,
             tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name, dataset_path=args.dataset_path,
-            scaling_factor=args.scaling_factor)
+            scaling_factor=args.scaling_factor, frozen_layers=args.frozen_layers, peft_student=args.peft_student)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
