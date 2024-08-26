@@ -49,7 +49,8 @@ def get_teacher_model(path: str, peft_config_path: Optional[str] = None, peft: b
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_quant_storage=torch.bfloat16,
         )
-        model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
+        model = AutoModelForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16,
+                                                    device_map={'':PartialState().process_index} if torch.cuda.is_available() else 'mps')
         if peft_config_path:
             model = PeftModel.from_pretrained(model, peft_config_path)
     else:
@@ -77,6 +78,7 @@ def get_sanity_student_model(path: str=None):
 def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_size: bool = False, load_model_weights: bool = False, peft: bool = False):
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
     teacher_model = get_teacher_model(teacher_model_path)
+    assert (not peft) or (peft and load_model_weights), "PEFT requires a pre-trained model"
     if path and load_model_weights:
         if peft:
             bnb_config = BitsAndBytesConfig(
@@ -93,7 +95,8 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
                 task_type="CAUSAL_LM",
                 target_modules=["x_proj", "in_proj", "out_proj", "dt_proj"]
             )
-            mamba_student_model = MambaForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
+            mamba_student_model = MambaForCausalLM.from_pretrained(path, quantization_config=bnb_config, torch_dtype=torch.bfloat16,
+                                                                    device_map={'':PartialState().process_index} if torch.cuda.is_available() else 'mps')
         else:
             mamba_student_model = MambaForCausalLM.from_pretrained(path)
         if set_teacher_embedding_size:
@@ -184,7 +187,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         )
         assert load_hf_model, "PEFT requires a pre-trained model"
         model = AutoModelForCausalLM.from_pretrained(teacher_model_path, quantization_config=bnb_config,
-                                                    torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index})
+                                                    torch_dtype=torch.bfloat16, device_map={'':PartialState().process_index} if torch.cuda.is_available() else 'mps')
     else:
         if load_hf_model:
             model = AutoModelForCausalLM.from_pretrained(teacher_model_path)
