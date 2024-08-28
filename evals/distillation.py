@@ -88,8 +88,8 @@ def get_mamba_model(path: str = None, gpu: int = None, set_teacher_embedding_siz
             #     bnb_4bit_quant_storage=torch.bfloat16,
             # )
             peft_config = LoraConfig(
-                r=16,
-                lora_alpha=64,
+                r=64,
+                lora_alpha=128,
                 lora_dropout=0.1,
                 bias="none",
                 task_type="CAUSAL_LM",
