@@ -173,7 +173,7 @@ def logits_to_tokens(logits):
     return torch.argmax(logits, dim=-1)
 
 
-def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, mixed_precision: bool, tf32: bool, peft: bool, accumulation_steps: int,
+def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_dataset:bool, epochs:int, lr: float, optimizer: str, fp16: bool, tf32: bool, bf16: bool, peft: bool, accumulation_steps: int,
                     teacher_model_path: str = teacher_model_path, wandb_name: str = "", dataset_path: str = None, evaluate_only: bool = False, load_hf_model: bool = False):
     # fine tune teacher model using hf trainer
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
@@ -207,9 +207,9 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         
 
     fix_mamba_config(model)
-    name = f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_mp{mixed_precision}_{dataset_path}".replace('.','').replace('/','')
+    name = f"./saves/u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_{dataset_path}".replace('.','').replace('/','')
     training_args = SFTConfig(
-        output_dir=f"./ft-{unique_id}-results",
+        output_dir=f"./checkpoints/ft-{unique_id}-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
@@ -224,7 +224,8 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         report_to="wandb",  # Enable logging to wandb
         gradient_accumulation_steps=accumulation_steps,
         remove_unused_columns=False,
-        fp16=mixed_precision,
+        fp16=fp16,
+        bf16=bf16,
         tf32=tf32,
         optim=optimizer,
         gradient_checkpointing=not peft,
@@ -261,16 +262,16 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
 
 def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model: Union[MambaLMHeadModel, AutoModelForCausalLM],
             minimize_dataset: bool, batch_size: int, max_length: int, epochs: int, model_path: str, accumulation_steps: int,
-            alpha: float, temperature: float, learning_rate: float, mixed_precision: bool, optimizer: str, tf32: bool, teacher_model_path: str = teacher_model_path,
+            alpha: float, temperature: float, learning_rate: float, optimizer: str, fp16: bool, tf32: bool, bf16: bool, teacher_model_path: str = teacher_model_path,
             wandb_name: str = "", dataset_path: str = None, scaling_factor:float = None, student_peft_config: Optional[LoraConfig] = None):
     # student_model.pad_token = student_tokenizer.eos_token
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
-    name = f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{mixed_precision}_{dataset_path}".replace('.','').replace('/','')
+    name = f"./saves/u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{fp16}_{dataset_path}".replace('.','').replace('/','')
     # student_model.config.use_cache = False
     training_args = SFTConfig(
-        output_dir=f"./hf-{unique_id}-results",
+        output_dir=f"./checkpoints/hf-{unique_id}-results",
         overwrite_output_dir=True,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
@@ -288,8 +289,9 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         lr_scheduler_type="cosine",
         optim=optimizer,
         gradient_checkpointing=student_peft_config is None,
-        fp16=mixed_precision,
+        fp16=fp16,
         tf32=tf32,
+        bf16=bf16,
         run_name=name,
         load_best_model_at_end=True,
         eval_on_start=True,
@@ -343,7 +345,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         is_mamba: bool=False, gpu: int = None, accumulation_steps: int = 1, use_modified_tokenizer: bool = False,
         use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
         minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
-        optimizer=None, mixed_precision: bool = False, tf32: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = "",
+        optimizer=None, fp16: bool = False, tf32: bool = False, bf16: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = "",
         dataset_path: str = None, scaling_factor: float = None, frozen_layers: int = 0, peft_student: bool = False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
@@ -376,7 +378,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     if hf_trainer:
         fix_mamba_config(student_model)
         save_path = hf_train(unique_id, teacher_model, student_model, minimize_dataset, batch_size, max_length, epochs, model_path,
-                accumulation_steps, alpha, temperature, learning_rate, mixed_precision, optimizer, tf32, teacher_model_path,
+                accumulation_steps, alpha, temperature, learning_rate, optimizer, fp16, tf32, bf16, teacher_model_path,
                 wandb_name, dataset_path, scaling_factor=scaling_factor, student_peft_config=peft_config)
         prep_eval_lm_harness(save_path)
     else:
@@ -456,8 +458,9 @@ if __name__ == "__main__":
     parser.add_argument("--finetune_teacher", action="store_true", default=False)
     parser.add_argument("--hf_trainer", action="store_true", default=True)
     parser.add_argument("--optimizer", type=str, default="adamw_hf")
-    parser.add_argument("--mixed_precision", action="store_true", default=False)
+    parser.add_argument("--fp16", action="store_true", default=False)
     parser.add_argument("--tf32", action="store_true", default=False)
+    parser.add_argument("--bf16", action="store_true", default=False)
     parser.add_argument("--peft", action="store_true", default=False)
     parser.add_argument("--peft_student", action="store_true", default=False)
     parser.add_argument("--peft_config_path", type=str, default=None)
@@ -478,11 +481,12 @@ if __name__ == "__main__":
                 "model_path": str(args.model_path),
                 "is_mamba": str(args.is_mamba),
                 "accumulation_steps": str(args.accumulation_steps),
-                "mixed_precision": str(args.mixed_precision),
+                "fp16": str(args.fp16),
+                "bf16": str(args.bf16),
                 "tf32": str(args.tf32),
         }
     
-    wandb_name = f"mp{args.mixed_precision}-{args.epochs}-epochs-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')
+    wandb_name = f"ep{args.epochs}-{args.max_length}-maxLen-alfa{args.alpha}-tmp{args.temperature}-{args.batch_size}-batchsize-{args.learning_rate}-lr-{args.is_mamba}-isMamba-{args.accumulation_steps}-accum-steps-{teacher_model_path}-teacher-model-{args.model_path}-student-model".replace('.','').replace('/','')
     if not torch.cuda.is_available():
         os.environ["WANDB_PROJECT"] = "LOCAL_RUN"
     else:
@@ -516,14 +520,14 @@ if __name__ == "__main__":
         init_logger(wandb)
 
     if args.finetune_teacher:
-        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, mixed_precision=args.mixed_precision, tf32=args.tf32, peft=args.peft, accumulation_steps=args.accumulation_steps, wandb_name=args.wandb_name, dataset_path=args.dataset_path, load_hf_model=args.load_hf_model)
+        finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, fp16=args.fp16, tf32=args.tf32, bf16=args.bf16, peft=args.peft, accumulation_steps=args.accumulation_steps, wandb_name=args.wandb_name, dataset_path=args.dataset_path, load_hf_model=args.load_hf_model)
     else:
         train(limit=args.limit, batch_size=args.batch_size, max_length=args.max_length, epochs=args.epochs,
             learning_rate=args.learning_rate, load_chkpt=args.load_chkpt, load_hf_model=args.load_hf_model,
             model_path=args.model_path, is_mamba=args.is_mamba, gpu=args.gpu, accumulation_steps=args.accumulation_steps,
             use_modified_tokenizer=args.use_modified_tokenizer, use_teacher_tokenizer=args.use_teacher_tokenizer,
             teacher_model_path=args.teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
-            temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, mixed_precision=args.mixed_precision,
+            temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, fp16=args.fp16,
             tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name, dataset_path=args.dataset_path,
             scaling_factor=args.scaling_factor, frozen_layers=args.frozen_layers, peft_student=args.peft_student)
 
