@@ -326,8 +326,8 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     if student_peft_config:
         printF('-'*1000, type(trainer.model))
         # peft_model = PeftModel.from_pretrained(student_model, f"./{name}", config=student_peft_config)
-        trainer.model.merge_and_unload()
-        trainer.model.save_pretrained(name + "-PEFT")
+        merged = trainer.model.merge_and_unload()
+        merged.save_pretrained(name + "-PEFT")
 
 
 
