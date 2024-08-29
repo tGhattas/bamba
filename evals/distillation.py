@@ -268,7 +268,8 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
-    name = "./saves/" + f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{fp16}_{dataset_path}".replace('.','').replace('/','')
+    model_path_alias = model_path.split("_")[0] if model_path.startswith("save") or model_path.startswith("u") else model_path
+    name = "./saves/" + f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path_alias}_optim{optimizer}_mp{fp16}_{dataset_path}".replace('.','').replace('/','')
     # student_model.config.use_cache = False
     training_args = SFTConfig(
         output_dir=f"./checkpoints/hf-{unique_id}-results",
