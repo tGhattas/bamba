@@ -307,6 +307,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
         eval_dataset=test_dataset,
         scaling_factor=scaling_factor,
         peft_config=student_peft_config,
+        tokenizer = teacher_data_collator.tokenizer
     )
     global accelerator
     accelerator = trainer.accelerator
