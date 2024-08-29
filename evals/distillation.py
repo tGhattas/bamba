@@ -207,7 +207,7 @@ def finetune_teacher(unique_id: str, batch_size: int, max_length: int, minimize_
         
 
     fix_mamba_config(model)
-    name = f"./saves/u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_{dataset_path}".replace('.','').replace('/','')
+    name = "./saves/" + f"u{unique_id}_finetuned_{wandb_name}_{epochs}_ep_{teacher_model_path}_optm{optimizer}_{dataset_path}".replace('.','').replace('/','')
     training_args = SFTConfig(
         output_dir=f"./checkpoints/ft-{unique_id}-results",
         overwrite_output_dir=True,
@@ -268,7 +268,7 @@ def hf_train(unique_id: str, teacher_model: AutoModelForCausalLM, student_model:
     student_model.resize_token_embeddings(teacher_model.config.vocab_size)
     train_dataset, _, teacher_data_collator = get_dataset(batch_size, max_length, "train", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
     test_dataset, _, _ = get_dataset(batch_size, max_length, "validation", minimize_dataset=minimize_dataset, return_dataloader=False, dataset_path=dataset_path)
-    name = f"./saves/u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{fp16}_{dataset_path}".replace('.','').replace('/','')
+    name = "./saves/" + f"u{unique_id}_hf_train_{wandb_name}_{epochs}_epochs_{model_path}_optim{optimizer}_mp{fp16}_{dataset_path}".replace('.','').replace('/','')
     # student_model.config.use_cache = False
     training_args = SFTConfig(
         output_dir=f"./checkpoints/hf-{unique_id}-results",
