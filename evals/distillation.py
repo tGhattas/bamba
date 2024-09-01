@@ -348,7 +348,7 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
         use_teacher_tokenizer: bool = False, teacher_model_path: str = teacher_model_path,
         minimize_dataset: bool = False, unique_id: str = '', alpha: float = 0.5, temperature: float = 2.0, hf_trainer: bool = False,
         optimizer=None, fp16: bool = False, tf32: bool = False, bf16: bool = False, peft: bool = False, peft_config_path: str = None, wandb_name: str = "",
-        dataset_path: str = None, scaling_factor: float = None, frozen_layers: int = 0, peft_student: bool = False):   
+        dataset_path: str = None, scaling_factor: float = None, frozen_layers: Union[int, list] = 0, peft_student: bool = False):   
     # assert that if either load_chkpt or load_hf_model is True but not both
     assert not (load_chkpt and load_hf_model), "Both load_chkpt and load_hf_model cannot be True at the same time"
     device = f'cuda{f":{gpu}" if gpu else ""}' if torch.cuda.is_available() else 'mps'
@@ -371,7 +371,12 @@ def train(limit: int = 1000, batch_size: int = 4, max_length: int = 128, epochs:
     student_model.train()
 
     # freeze the first few layers of the student model
-    for i in range(frozen_layers):
+    if isinstance(frozen_layers, int):
+        frozen_layers_seq = range(frozen_layers)
+    else:
+        assert isinstance(frozen_layers, list), "frozen_layers should be an integer or a list of integers"
+        frozen_layers_seq = frozen_layers
+    for i in frozen_layers_seq:
         params = student_model.base_model.layers[i].parameters()
         for param in params:
             param.requires_grad = False
@@ -468,7 +473,7 @@ if __name__ == "__main__":
     parser.add_argument("--peft_config_path", type=str, default=None)
     parser.add_argument("--dataset_path", type=str, default=None)
     parser.add_argument("--scaling_factor", type=float, default=None)
-    parser.add_argument("--frozen_layers", type=int, default=0)
+    parser.add_argument("--frozen_layers", type=str, default='0')
     args = parser.parse_args()
     
 
@@ -520,6 +525,12 @@ if __name__ == "__main__":
             id=args.wandb_id
         )
         init_logger(wandb)
+    frozen_layers = args.frozen_layers
+    
+    if "," in frozen_layers:
+        frozen_layers = list(map(int, frozen_layers.split(",")))
+    else:
+        frozen_layers = int(frozen_layers)
 
     if args.finetune_teacher:
         finetune_teacher(unique_id=name_prefix, batch_size=args.batch_size, max_length=args.max_length, minimize_dataset=args.minimize_dataset, epochs=args.epochs, lr=args.learning_rate, optimizer=args.optimizer, teacher_model_path=args.teacher_model_path, fp16=args.fp16, tf32=args.tf32, bf16=args.bf16, peft=args.peft, accumulation_steps=args.accumulation_steps, wandb_name=args.wandb_name, dataset_path=args.dataset_path, load_hf_model=args.load_hf_model)
@@ -531,7 +542,7 @@ if __name__ == "__main__":
             teacher_model_path=args.teacher_model_path, minimize_dataset=args.minimize_dataset, unique_id=name_prefix, alpha=args.alpha,
             temperature=args.temperature, hf_trainer=args.hf_trainer, optimizer=args.optimizer, fp16=args.fp16,
             tf32=args.tf32, peft_config_path=args.peft_config_path, peft=args.peft, wandb_name=args.wandb_name, dataset_path=args.dataset_path,
-            scaling_factor=args.scaling_factor, frozen_layers=args.frozen_layers, peft_student=args.peft_student)
+            scaling_factor=args.scaling_factor, frozen_layers=frozen_layers, peft_student=args.peft_student)
 
     # example command line run:
     # python evals/distillation.py --limit 1000000000000 --batch_size 8 --max_length 128 --epochs 3 --learning_rate 1e-3 --load_hf_model --model_path /cs/labs/roys/w552295/bamba/full_trained_epoch_2_lr_0.001_is_mamba_True_max_length_128  --is_mamba
